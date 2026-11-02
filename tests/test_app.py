@@ -320,3 +320,27 @@ def test_restore_rejects_corrupt_archive_without_changing_db(tmp_path):
             history_store.restore(DATA,PUBLIC,"corrupt-1234")
         assert any(t["id"]==created["id"] for t in client.get("/api/topics").json())
     finally:fake.unlink(missing_ok=True)
+
+def test_existing_detached_template_media_is_repaired_at_publish():
+    """Regression: detached HTML refers to media/<hash>.png inside its own package."""
+    import io
+    from PIL import Image
+    from app import PACKAGES,PUBLIC
+    pic=Image.new("RGB",(10,10),"green")
+    stream=io.BytesIO();pic.save(stream,format="PNG")
+    upload=client.post("/api/assets",files={"file":("picture.png",stream.getvalue(),"image/png")})
+    assert upload.status_code==200
+    url=upload.json()["url"]
+    d=client.post("/api/dcells",json={"name":"旧模板图片回归","mode":"template","template":"gallery",
+      "content":{"summary":"图片测试","images":[{"src":url,"caption":"测试图片"}]}}).json()
+    response=client.post(f"/api/dcells/{d['id']}/detach")
+    assert response.status_code==200,response.text
+    local=PACKAGES/str(d["id"])/"media"/upload.json()["name"]
+    assert local.is_file(), "new detach must copy managed images"
+    local.unlink()
+    assert not local.exists()
+    publish=client.post("/api/publish")
+    assert publish.status_code==200,publish.text
+    copied=PUBLIC/"custom"/("dcell-"+str(d["id"]))/"media"/upload.json()["name"]
+    assert copied.is_file(), "publish should repair old detached pages from managed media"
+    assert client.get(f"/custom/dcell-{d['id']}/media/{upload.json()['name']}").status_code==200
