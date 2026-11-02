@@ -16,6 +16,7 @@ from contextlib import contextmanager
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.responses import FileResponse, Response, HTMLResponse, StreamingResponse
+import history_store
 from template_engine import TEMPLATES, DEFAULT_CONTENT, CSS as TEMPLATE_CSS, render_template
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -50,17 +51,27 @@ async def protect_admin(request: Request, call_next):
                 return Response("Authentication required",401,headers={"WWW-Authenticate":'Basic realm="NexVain Admin"'})
         elif request.client is None or request.client.host not in ("127.0.0.1","::1","testclient"):
             return Response("Admin password required for remote access",403)
+    is_edit=(request.method in ("POST","PUT","DELETE") and path.startswith("/api/")
+             and not path.startswith(("/api/history/","/api/charts","/api/assets")))
+    is_restore=(request.method=="POST" and path.startswith("/api/history/restore/"))
+    sensitive=(is_restore or request.method=="DELETE" or path=="/api/publish")
+    if sensitive:
+        secret=os.environ.get("NEXVAIN_ADMIN_PASSWORD","")
+        if not secret: return Response("Configure NEXVAIN_ADMIN_PASSWORD for critical operations",403)
+        if not hmac.compare_digest(request.headers.get("x-nexvain-confirm",""),secret):
+            return Response("Admin password confirmation required",403)
+    snap=None
+    if is_edit and not is_restore:
+        try: snap=history_store.create(DATA,PUBLIC,request.method+" "+path)
+        except Exception: return Response("Safety snapshot failed; change cancelled",503)
     response=await call_next(request)
-    # Browsers must revalidate published HTML after explicit republishing.
     if request.url.path=="/" or request.url.path.endswith((".html","/admin")):
         response.headers["Cache-Control"]="no-store"
-    # Record successful draft mutations, leaving publish as an explicit step.
-    if (request.method in ("POST","PUT","DELETE")
-        and request.url.path.startswith("/api/")
-        and request.url.path!="/api/publish"
-        and 200<=response.status_code<300):
+    if is_edit and 200<=response.status_code<300 and path!="/api/publish":
         with connection() as db:
-            db.execute("INSERT INTO settings(key,value) VALUES ('draft_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1")
+            db.execute("INSERT INTO settings(key,value) VALUES (\'draft_revision\',\'1\') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1")
+    if request.method in ("POST","PUT","DELETE") and path.startswith("/api/") and not path.startswith("/api/history/"):
+        history_store.audit(DATA,{"action":request.method+" "+path,"status":response.status_code,"snapshot":snap})
     return response
 
 
@@ -141,6 +152,23 @@ def one(db, table, ident):
         raise HTTPException(404, f"{table} not found")
     return parse_row(row)
 
+@app.get("/api/history")
+def view_history():
+    return {"events":history_store.recent(DATA),"snapshots":history_store.checkpoints(DATA),
+            "admin_password_configured":bool(os.environ.get("NEXVAIN_ADMIN_PASSWORD"))}
+
+@app.post("/api/history/checkpoint")
+def manual_checkpoint():
+    return {"ok":True,"snapshot":history_store.create(DATA,PUBLIC,"Manual checkpoint")}
+
+@app.post("/api/history/restore/{ident}")
+def restore_checkpoint(ident:str):
+    rescue=history_store.create(DATA,PUBLIC,"Pre-restore safety copy")
+    try: history_store.restore(DATA,PUBLIC,ident)
+    except FileNotFoundError: raise HTTPException(404,"Checkpoint not found")
+    except (ValueError,OSError,sqlite3.DatabaseError,zipfile.BadZipFile) as error:
+        raise HTTPException(409,str(error))
+    return {"ok":True,"restored":ident,"rescue_checkpoint":rescue}
 @app.get("/api/topics")
 def list_topics():
     with connection() as db:
