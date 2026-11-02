@@ -25,13 +25,13 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 </style></head>
 <body>
 <header><strong>NexVain <span class="muted">专题数据展示管理</span></strong>
-<div class="row"><span id="status"></span><button class="secondary" onclick="window.open('/','_blank')">查看大屏</button><button onclick="publish()">发布静态站点</button></div></header>
+<div class="row"><span id="publish-state" class="muted">检查发布状态…</span><span id="status"></span><button class="secondary" onclick="window.open('/','_blank')">查看大屏</button><button onclick="publish()">发布静态站点</button></div></header>
 <div class="layout"><aside>
 <button id="nav-topics" class="selected" onclick="showTab('topics')">专题管理</button>
 <button id="nav-dcells" onclick="showTab('dcells')">dcell 管理</button>
 <button id="nav-appearance" onclick="showTab('appearance')">外观设置</button>
 </aside><main>
-<div class="notice">开发版：管理接口支持环境变量设置 HTTP Basic 密码；未设置时仅允许本机访问。请勿直接暴露公网。</div>
+<div id="publish-hint" class="notice">专题中的二级导航只显示已关联的 dcell。新增、导入、关联之后，请点击「发布静态站点」。</div><div class="notice">开发版：管理接口支持环境变量设置 HTTP Basic 密码；未设置时仅允许本机访问。请勿直接暴露公网。</div>
 <section id="topics-section"><div class="toolbar"><h2>专题管理</h2><button onclick="openRecord('topic')">+ 新建专题</button></div><div id="topics-list"></div></section>
 <section id="dcells-section" class="hidden"><div class="toolbar"><h2>dcell 管理</h2><button onclick="openRecord('dcell')">+ 新建 dcell</button></div><div id="dcells-list"></div></section>
 <section id="appearance-section" class="hidden"><h2>全局外观</h2><div class="card"><label>展示站点风格</label><select id="theme"><option value="blue">科技深蓝</option><option value="dark">深色简约</option><option value="light">浅色科研</option></select><p class="muted">全局主题用于所有专题首页和 dcell 页面，发布后生效。</p><button onclick="saveTheme()">保存主题</button></div></section>
@@ -64,7 +64,8 @@ const seed={
  gallery:'<section class="panel"><h2>图文展示</h2><p>请上传或填写经过脱敏的展示内容。</p></section>',
  custom:'<section><h2>自定义内容</h2></section>'
 };
-function message(s){document.getElementById('status').textContent=s;setTimeout(()=>document.getElementById('status').textContent='',4000)}
+async function updatePublishState(){try{const p=await api("/publish/status");document.getElementById("publish-state").textContent=p.needs_publish?"● 有未发布变更":"✓ 展示站点已发布";document.getElementById("publish-hint").textContent=p.needs_publish?("存在未发布修改。另有 "+p.unlinked_dcells+" 个 dcell 尚未关联任何专题，因此不会出现在二级导航。保存关联后请点击右上角「发布静态站点」。"):("展示站点已发布。"+(p.unlinked_dcells?"仍有 "+p.unlinked_dcells+" 个未关联 dcell，不会出现在专题导航。":"所有 dcell 已有关联。"));}catch(e){document.getElementById("publish-state").textContent="发布状态检查失败"}}
+function message(s){document.getElementById('status').textContent=s;setTimeout(()=>document.getElementById('status').textContent='',4000);updatePublishState()}
 async function refresh(){
  [topics,dcells]=await Promise.all([api('/topics'),api('/dcells')]);
  document.getElementById('topics-list').innerHTML=topics.map(t=>'<div class="card"><div class="row"><h3>'+esc(t.name)+'</h3><button onclick="openRecord(\'topic\','+t.id+')">编辑首页 / 关联</button><button class="secondary" onclick="editDesign(\'topic\','+t.id+')">设计首页</button><button class="danger" onclick="removeRecord(\'topic\','+t.id+')">删除</button></div><p class="muted">'+esc(t.description)+'</p></div>').join('')||'<p class="muted">还没有专题。</p>';
@@ -100,12 +101,12 @@ async function saveRecord(event){
  const path=isTopic?'/topics':'/dcells';
  try{
  const result=await api(path+(current?'/'+current.id:''),{method:current?'PUT':'POST',body:JSON.stringify(payload)});
- await refresh();await openRecord(kind,result.id);message('已保存');
+ await refresh();document.getElementById('record-dialog').close();await openRecord(kind,result.id);message('已保存，发布后同步到大屏');
  }catch(e){alert(e.message)}
 }
 async function removeRecord(k,id){
  if(!confirm('删除后关联关系也会清除，确定删除？'))return;
- try{await api((k==='topic'?'/topics/':'/dcells/')+id,{method:'DELETE'});await refresh()}catch(e){alert(e.message)}
+ try{await api((k==='topic'?'/topics/':'/dcells/')+id,{method:'DELETE'});await refresh();updatePublishState()}catch(e){alert(e.message)}
 }
 async function loadTopicRelations(){
  const rows=await api('/topics/'+current.id+'/dcells');const chosen=new Map(rows.map(r=>[r.id,r]));
@@ -120,7 +121,7 @@ async function saveRelations(){
  const id=Number(node.value);const alias=document.querySelector('.rel-alias[data-id="'+id+'"]').value;
  return {dcell_id:id,alias,position:i};
  });
- try{await api('/topics/'+current.id+'/dcells',{method:'PUT',body:JSON.stringify(selected)});message('关联已保存')}catch(e){alert(e.message)}
+ try{await api('/topics/'+current.id+'/dcells',{method:'PUT',body:JSON.stringify(selected)});message('关联已保存，请发布静态站点使新导航生效')}catch(e){alert(e.message)}
 }
 async function loadDcellRelations(){
  const rows=await api('/dcells/'+current.id+'/topics');
@@ -151,7 +152,7 @@ async function importDirectory(){
  if(!path)return alert('请填写相对目录');
  try{
   await api('/dcells/'+current.id+'/import-directory',{method:'POST',body:JSON.stringify({path})});
-  const id=current.id;await refresh();await openRecord('dcell',id);
+  const id=current.id;await refresh();document.getElementById('record-dialog').close();await openRecord('dcell',id);
   message('目录已导入，发布后更新大屏');
  }catch(e){alert(e.message)}
 }
@@ -202,12 +203,12 @@ async function saveDesign(){
  }catch(e){alert(e.message)}
 }
 async function saveTheme(){
- try{await api('/settings',{method:'PUT',body:JSON.stringify({theme:document.getElementById('theme').value})});message('主题已保存')}catch(e){alert(e.message)}
+ try{await api('/settings',{method:'PUT',body:JSON.stringify({theme:document.getElementById('theme').value})});message('主题已保存，发布后生效')}catch(e){alert(e.message)}
 }
 async function publish(){
  if(!confirm('将当前数据发布成静态页面？请确认内容已经脱敏。'))return;
- try{const r=await api('/publish',{method:'POST'});message('发布完成：'+r.topics+' 专题 / '+r.dcells+' dcell')}catch(e){alert(e.message)}
+ try{const r=await api('/publish',{method:'POST'});message('发布完成：'+r.topics+' 专题 / '+r.dcells+' dcell；重新打开大屏即可查看')}catch(e){alert(e.message)}
 }
-async function init(){await refresh();const s=await api('/settings');document.getElementById('theme').value=s.theme}
+async function init(){await refresh();const s=await api('/settings');document.getElementById('theme').value=s.theme;await updatePublishState()}
 init().catch(e=>alert('初始化失败：'+e.message));
 </script></body></html>
