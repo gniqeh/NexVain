@@ -57,7 +57,10 @@ with tempfile.TemporaryDirectory(prefix="nexvain-visual-") as temp:
                 page.goto(base+"/"+filename,wait_until="networkidle")
                 assert page.get_by_role("heading",name=title).count()>0,filename
                 assert page.locator(".nav").is_visible(),filename
-                assert page.locator("#nv-full").is_visible(),filename
+                assert page.locator("#nv-full").count()==0,filename
+                assert page.locator("#nv-play").count()==0,filename
+                canvas=page.locator(".shell").bounding_box()
+                assert round(canvas["width"])==1920 and round(canvas["height"])==1080,canvas
                 dimensions=page.evaluate("""() => ({
                    scrollWidth:document.documentElement.scrollWidth,
                    viewportWidth:window.innerWidth,
@@ -71,7 +74,11 @@ with tempfile.TemporaryDirectory(prefix="nexvain-visual-") as temp:
             page.goto(base+f"/dcell-{dcell['id']}.html")
             assert page.locator(".dcell-metric").count()==3
             assert page.locator(".dcell-bar").count()==3
-            assert page.locator("#nv-play").is_visible()
+            assert page.locator("#nv-play").count()==0
+            page.set_viewport_size({"width":1366,"height":768})
+            page.reload(wait_until="networkidle")
+            canvas=page.locator(".shell").bounding_box()
+            assert round(canvas["width"])==1920 and round(canvas["height"])==1080,canvas
             browser.close()
         print("1920x1080 browser smoke check passed")
     finally:
