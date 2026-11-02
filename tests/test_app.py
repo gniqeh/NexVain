@@ -17,7 +17,7 @@ def test_topic_dcell_publish():
     assert client.post("/api/publish").status_code == 200
     html = client.get(f"/dcell-{d['id']}.html").text
     assert "成果概况" in html
-    assert "<script>" not in html
+    assert "<script>alert(1)</script>" not in html
 
 def test_chart_creation_and_static_export():
     topic = client.post("/api/topics", json={"name":"示范专题"}).json()
@@ -253,3 +253,21 @@ def test_confirmation_required_for_publish_and_delete():
     assert wrong.status_code==403
     assert client.post("/api/publish",headers={"X-NexVain-Confirm":"wrong"}).status_code==403
     assert client.delete(f"/api/topics/{item['id']}").status_code==200
+
+def test_publish_checker_catches_missing_assets(tmp_path):
+    from publish_checks import check
+    root=tmp_path/"site"
+    root.mkdir()
+    (root/"index.html").write_text('<link rel="stylesheet" href="lost.css"><img src="missing.png">')
+    result=check(root)
+    assert result["ok"] is False
+    assert len(result["errors"])==2
+    (root/"lost.css").write_text("body{color:white}")
+    (root/"missing.png").write_bytes(b"image")
+    assert check(root)["ok"] is True
+
+def test_dashboard_fullscreen_controls_and_large_screen_css():
+    from app import render_document
+    html=render_document("大屏","介绍","<p>正文</p>",'<a href="index.html">主页</a>',"blue")
+    assert "nv-full" in html and "nv-play" in html
+    assert "min-width:1920px" in html
