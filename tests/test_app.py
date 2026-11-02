@@ -29,7 +29,7 @@ def test_chart_creation_and_static_export():
         "page":{"html":'<div><img src="'+url+'" alt="统计图"></div>'}}).json()
     assert client.put(f"/api/topics/{topic['id']}/dcells",json=[{"dcell_id":dcell["id"]}]).status_code==200
     assert client.post("/api/publish").status_code==200
-    assert url in client.get(f"/dcell-{dcell['id']}.html").text
+    assert url.lstrip("/") in client.get(f"/dcell-{dcell['id']}.html").text
     assert client.get(url).status_code==200
 
 def test_image_upload_removes_exif():
@@ -128,3 +128,55 @@ def test_uploaded_image_is_accessible_and_published_without_backend():
     assert 'src="/media/' not in published
     from app import PUBLIC
     assert (PUBLIC / "media" / response.json()["name"]).is_file()
+
+def test_data_driven_templates_clone_preview_and_publish():
+    listed=client.get("/api/templates")
+    assert listed.status_code==200
+    assert len(listed.json()["templates"])>=4
+    d=client.post("/api/dcells",json={
+        "name":"寒地作物图像", "description":"科研数据示例",
+        "mode":"template","template":"overview",
+        "content":{
+            "summary":"黑龙江农业数据展示",
+            "metrics":[{"label":"图片数量","value":"12800","note":"张"}],
+            "chart":[{"label":"玉米","value":30},{"label":"大豆","value":55}],
+            "sections":[{"title":"采集方法","text":"无人机与地面采样"}],
+            "images":[]
+        }
+    }).json()
+    assert d["mode"]=="template"
+    assert d["content"]["metrics"][0]["value"]=="12800"
+    preview=client.get(f"/api/dcells/{d['id']}/preview")
+    assert preview.status_code==200
+    assert "黑龙江农业数据展示" in preview.text
+    assert "图片数量" in preview.text
+    assert "dcell-bars" in preview.text
+    clone=client.post(f"/api/dcells/{d['id']}/clone").json()
+    assert clone["name"].endswith("（副本）")
+    assert clone["content"]==d["content"]
+    assert clone["mode"]=="template"
+    assert client.post("/api/publish").status_code==200
+    page=client.get(f"/dcell-{clone['id']}.html").text
+    assert "12800" in page
+    assert "dcell-grid" in page
+    assert "dcell-bars" in page
+    assert "无人机与地面采样" in page
+
+def test_template_escapes_user_content():
+    d=client.post("/api/dcells",json={
+        "name":"安全模板","template":"research","mode":"template",
+        "content":{"summary":"<script>alert(1)</script>",
+                   "metrics":[{"label":"<img src=x onerror=alert(1)>","value":"1"}],
+                   "sections":[]}
+    }).json()
+    response=client.get(f"/api/dcells/{d['id']}/preview")
+    assert response.status_code==200
+    assert "<script>alert(1)</script>" not in response.text
+    assert "&lt;script&gt;" in response.text
+
+def test_new_template_has_default_content():
+    result=client.post("/api/dcells",json={
+        "name":"拆封即用","template":"metrics","mode":"template"
+    }).json()
+    assert result["content"]["metrics"]
+    assert "dcell-metric" in client.get(f"/api/dcells/{result['id']}/preview").text
