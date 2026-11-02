@@ -1,0 +1,25 @@
+name: 1920 Visual smoke
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - scripts/visual_smoke.py
+      - .github/workflows/visual-smoke.yml
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements-dev.txt playwright
+      - run: python -m playwright install chromium --with-deps
+      - run: python scripts/visual_smoke.py
+      - name: Upload 1920 screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexvain-1920-screenshots
+          path: visual_artifacts/*.png
+          if-no-files-found: ignore
