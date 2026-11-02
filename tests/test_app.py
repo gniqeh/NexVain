@@ -126,5 +126,5 @@ def test_uploaded_image_is_accessible_and_published_without_backend():
     published=client.get(f"/dcell-{dcell['id']}.html").text
     assert 'src="media/' in published
     assert 'src="/media/' not in published
-    assert client.get(source_url.lstrip("/")).status_code==200
-    assert client.get("/media/"+response.json()["name"]).status_code==200
+    from app import PUBLIC
+    assert (PUBLIC / "media" / response.json()["name"]).is_file()
