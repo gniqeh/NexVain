@@ -431,6 +431,15 @@ def fragment(page):
     ],attributes={"*":["class","title"],"img":["src","alt","width","height"]},
     protocols=["https","http"],strip=True)
 
+def published_fragment(page):
+    """Reference the exported local media, not the admin-only /media endpoint."""
+    value = fragment(page)
+    return re.sub(
+        r'(?<=src=")/media/([a-f0-9]{32}\\.(?:png|svg))(?=")',
+        r'media/\\1',
+        value
+    )
+
 THEMES = {
 "blue": ("#081a2c","#14334f","#dcefff","#3dbde9"),
 "dark": ("#171b24","#2b3445","#edf2f7","#b3c5e0"),
@@ -524,13 +533,13 @@ def publish():
         for t in topics:
             owned=[r for r in links if r["topic_id"]==t["id"] and r["dcell_id"] in by_id]
             cards="".join(f'<a class="card" href="dcell-{r["dcell_id"]}.html">{html.escape(r["alias"] or by_id[r["dcell_id"]]["name"])}</a>' for r in owned)
-            content=fragment(t["page"])+f'<div class="cards">{cards}</div>'
+            content=published_fragment(t["page"])+f'<div class="cards">{cards}</div>'
             (staging/f'topic-{t["id"]}.html').write_text(render_document(t["name"],t["description"],content,nav_html,theme,safe_css(t["page"].get("css",""))),encoding="utf-8")
         for d in dcells:
             if d.get("mode")=="package":
                 content=('<iframe title="'+html.escape(d["name"],quote=True)+'" src="custom/dcell-'+str(d["id"])+'/index.html" sandbox="allow-scripts" referrerpolicy="no-referrer" style="width:100%;height:calc(100vh - 180px);border:0"></iframe>')
             else:
-                content=fragment(d["page"]) or '<div class="panel"><p>'+html.escape(d["description"])+'</p></div>'
+                content=published_fragment(d["page"]) or '<div class="panel"><p>'+html.escape(d["description"])+'</p></div>'
             (staging/f'dcell-{d["id"]}.html').write_text(render_document(d["name"],d["description"],content,nav_html,theme,safe_css(d["page"].get("css",""))),encoding="utf-8")
         old=ROOT/".published-old"
         if old.exists(): shutil.rmtree(old)
