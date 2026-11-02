@@ -271,3 +271,52 @@ def test_dashboard_fullscreen_controls_and_large_screen_css():
     html=render_document("大屏","介绍","<p>正文</p>",'<a href="index.html">主页</a>',"blue")
     assert "nv-full" in html and "nv-play" in html
     assert "min-width:1920px" in html
+
+def test_unresolved_asset_blocks_publish_and_preserves_previous_site():
+    from app import PUBLIC
+    import io,zipfile
+    assert client.post("/api/publish").status_code==200
+    previous=(PUBLIC/"index.html").read_bytes()
+    d=client.post("/api/dcells",json={"name":"缺资源测试","mode":"package"}).json()
+    archive=io.BytesIO()
+    with zipfile.ZipFile(archive,"w") as z:
+        z.writestr("index.html",'<h1>资源缺失</h1><script src="missing.js"></script>')
+    uploaded=client.post(f"/api/dcells/{d['id']}/package",files={"file":("broken.zip",archive.getvalue(),"application/zip")})
+    assert uploaded.status_code==200,uploaded.text
+    rejected=client.post("/api/publish")
+    assert rejected.status_code==409,rejected.text
+    assert "missing.js" in rejected.text
+    assert (PUBLIC/"index.html").read_bytes()==previous
+    assert client.delete(f"/api/dcells/{d['id']}").status_code==200
+
+def test_managed_asset_gallery_lists_uploaded_images():
+    import io
+    from PIL import Image
+    image=Image.new("RGB",(12,12),"red")
+    output=io.BytesIO();image.save(output,format="PNG")
+    uploaded=client.post("/api/assets",files={"file":("image.png",output.getvalue(),"image/png")})
+    assert uploaded.status_code==200
+    gallery=client.get("/api/assets/library")
+    assert gallery.status_code==200
+    assert uploaded.json()["url"] in {a["url"] for a in gallery.json()}
+
+def test_local_dev_mode_allows_critical_actions_without_confirmation(monkeypatch):
+    monkeypatch.setenv("NEXVAIN_DEV_MODE","1")
+    headers={"Authorization":"","X-NexVain-Confirm":""}
+    assert client.get("/api/history",headers=headers).json()["development_mode"] is True
+    assert client.post("/api/publish",headers=headers).status_code==200
+    monkeypatch.delenv("NEXVAIN_DEV_MODE")
+
+def test_restore_rejects_corrupt_archive_without_changing_db(tmp_path):
+    import history_store,sqlite3
+    from app import DATA,PUBLIC
+    created=client.post("/api/topics",json={"name":"损坏快照保护"}).json()
+    directory=DATA/"history";directory.mkdir(exist_ok=True)
+    fake=directory/"corrupt-1234.zip"
+    fake.write_bytes(b"not a zip")
+    try:
+        import pytest
+        with pytest.raises(Exception):
+            history_store.restore(DATA,PUBLIC,"corrupt-1234")
+        assert any(t["id"]==created["id"] for t in client.get("/api/topics").json())
+    finally:fake.unlink(missing_ok=True)
