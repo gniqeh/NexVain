@@ -219,15 +219,15 @@ def safe_css(value):
     for rule in tinycss2.parse_stylesheet(value or "", skip_whitespace=True, skip_comments=True):
         if rule.type != "qualified-rule": continue
         selector = tinycss2.serialize(rule.prelude).strip()
-        if not re.fullmatch(r"[\\w .,#>:+-]{1,180}", selector): continue
+        if not re.fullmatch(r"[a-zA-Z0-9_ .,#>:+-]{1,180}", selector): continue
         props = []
         for item in tinycss2.parse_declaration_list(rule.content, skip_comments=True, skip_whitespace=True):
             if item.type != "declaration" or item.lower_name not in allowed: continue
             val = tinycss2.serialize(item.value).strip()
-            if len(val)>220 or re.search(r"url\\s*\\(|expression\\s*\\(|[{};<>@]|\\\\", val, re.I): continue
+            if len(val)>220 or any(x in val.lower() for x in ("url(", "expression(", "@import", "<", ">", "{", "}", ";", "\\")): continue
             props.append(item.lower_name + ":" + val)
         if props: rules.append(selector + "{" + ";".join(props) + "}")
-    return "\\n".join(rules)
+    return chr(10).join(rules)
 
 def render_document(title, intro, content, nav, theme, custom_css=""):
     bg,panel,fg,accent=THEMES[theme]
