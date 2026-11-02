@@ -31,7 +31,7 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 <button id="nav-dcells" onclick="showTab('dcells')">dcell 管理</button>
 <button id="nav-appearance" onclick="showTab('appearance')">外观设置</button>
 </aside><main>
-<div class="notice">本地开发版：管理接口尚未启用身份认证，请仅在本机运行，不要暴露到公网。</div>
+<div class="notice">开发版：管理接口支持环境变量设置 HTTP Basic 密码；未设置时仅允许本机访问。请勿直接暴露公网。</div>
 <section id="topics-section"><div class="toolbar"><h2>专题管理</h2><button onclick="openRecord('topic')">+ 新建专题</button></div><div id="topics-list"></div></section>
 <section id="dcells-section" class="hidden"><div class="toolbar"><h2>dcell 管理</h2><button onclick="openRecord('dcell')">+ 新建 dcell</button></div><div id="dcells-list"></div></section>
 <section id="appearance-section" class="hidden"><h2>全局外观</h2><div class="card"><label>展示站点风格</label><select id="theme"><option value="blue">科技深蓝</option><option value="dark">深色简约</option><option value="light">浅色科研</option></select><p class="muted">全局主题用于所有专题首页和 dcell 页面，发布后生效。</p><button onclick="saveTheme()">保存主题</button></div></section>
