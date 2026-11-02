@@ -31,7 +31,7 @@ def check(root:Path):
             if parsed.scheme or parsed.netloc:continue
             path=unquote(parsed.path)
             if not path:continue
-            relative=Path(path.lstrip("/")) if path.startswith("/") else (file.parent/root).joinpath(path) if False else file.parent.joinpath(path).relative_to(root)
+            relative=Path(path.lstrip("/")) if path.startswith("/") else file.parent.joinpath(path).relative_to(root)
             candidate=(root/relative).resolve()
             checked+=1
             if not candidate.is_relative_to(root) or not candidate.is_file():
