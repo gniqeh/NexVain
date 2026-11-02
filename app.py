@@ -32,11 +32,18 @@ PACKAGES.mkdir(parents=True,exist_ok=True)
 MEDIA.mkdir(parents=True,exist_ok=True)
 DATA.mkdir(parents=True, exist_ok=True)
 PUBLIC.mkdir(exist_ok=True)
-app = FastAPI(title="NexVain", version="0.4.0")
+app = FastAPI(title="NexVain", version="0.7.0")
+
+def development_mode():
+    return os.environ.get("NEXVAIN_DEV_MODE","").strip().lower() in ("1","true","yes")
+
 @app.middleware("http")
 async def protect_admin(request: Request, call_next):
     path=request.url.path
-    if path == "/admin" or path.startswith(("/api/","/package/","/media/")):
+    dev=development_mode()
+    if dev and (request.client is None or request.client.host not in ("127.0.0.1","::1","testclient")):
+        return Response("Local access only in development mode",403)
+    if not dev and (path == "/admin" or path.startswith(("/api/","/package/","/media/"))):
         expected=os.environ.get("NEXVAIN_ADMIN_PASSWORD","")
         if expected:
             import base64
@@ -55,7 +62,7 @@ async def protect_admin(request: Request, call_next):
              and not path.startswith(("/api/history/","/api/charts","/api/assets")))
     is_restore=(request.method=="POST" and path.startswith("/api/history/restore/"))
     sensitive=(is_restore or request.method=="DELETE" or path=="/api/publish")
-    if sensitive:
+    if sensitive and not dev:
         secret=os.environ.get("NEXVAIN_ADMIN_PASSWORD","")
         if not secret: return Response("Configure NEXVAIN_ADMIN_PASSWORD for critical operations",403)
         if not hmac.compare_digest(request.headers.get("x-nexvain-confirm",""),secret):
@@ -155,7 +162,8 @@ def one(db, table, ident):
 @app.get("/api/history")
 def view_history():
     return {"events":history_store.recent(DATA),"snapshots":history_store.checkpoints(DATA),
-            "admin_password_configured":bool(os.environ.get("NEXVAIN_ADMIN_PASSWORD"))}
+            "admin_password_configured":bool(os.environ.get("NEXVAIN_ADMIN_PASSWORD")),
+            "development_mode":development_mode()}
 
 @app.post("/api/history/checkpoint")
 def manual_checkpoint():
