@@ -457,6 +457,15 @@ def save_source_file(ident:int,path:str,item:SourceIn):
     temporary.replace(file)
     return {"ok":True,"path":path,"size":len(encoded)}
 
+@app.get("/api/dcells/{ident}/generated-source")
+def generated_source(ident:int):
+    with connection() as db:
+        d=one(db,"dcells",ident)
+        theme=db.execute("SELECT value FROM settings WHERE key='theme'").fetchone()[0]
+    if d["mode"]=="package":
+        raise HTTPException(409,"Use the source workspace file API")
+    return {"path":"index.html","content":standalone_html(d,theme),"read_only":True}
+
 @app.post("/api/dcells/{ident}/detach")
 def detach_to_source(ident:int):
     with connection() as db:
