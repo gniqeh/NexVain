@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NexVain dcell 导入演示 · 寒地农业</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="dashboard">
+<header><div class="eyebrow">NEXVAIN / DCELL / STANDALONE DEMO</div><h1>寒地农业数据集 · 外部页面导入演示</h1><p>这是完全独立的 HTML + CSS + JavaScript 页面，不依赖 GrapesJS 或远程 CDN。</p></header>
+<section class="metrics">
+<div class="metric"><span>演示记录数</span><strong>12,480</strong><small>仅用于页面测试</small></div>
+<div class="metric"><span>示例类别</span><strong>4</strong><small>可替换为实际分类</small></div>
+<div class="metric"><span>数据格式</span><strong>CSV / 图像</strong><small>静态资源示例</small></div>
+<div class="metric"><span>展示模式</span><strong>离线</strong><small>本地 JS / CSS</small></div>
+</section>
+<section class="two-col">
+<article class="panel"><div class="panel-head"><h2>年度示例统计</h2><span>鼠标悬停查看数据</span></div><div id="chart" class="chart" aria-label="示例柱状图"></div></article>
+<article class="panel"><div class="panel-head"><h2>代表性图形素材</h2><span>本地 SVG 文件</span></div><img class="hero-image" src="assets/field.svg" alt="农业田块与卫星示意图"><p class="hint">SVG 放在 ZIP 子目录，检验静态发布时资源路径是否正常。</p></article>
+</section>
+<footer><span>演示数据均为虚构，不包含真实科研数据</span><button id="toggle">切换统计数据</button></footer>
+</main><script src="app.js"></script>
+</body></html>
