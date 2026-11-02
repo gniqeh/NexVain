@@ -185,3 +185,24 @@ NexVain 是上级系统中的固定画布模块。专题首页和 dcell 外层�
 6. 原先没有做独立设计的总首页仍显示专题卡片，没有自定义设计的专题首页仍显示相关 dcell 卡片，确保升级不会破坏存量页面。
 
 后台 API：`GET/PUT /api/pages/home`、`GET/PUT /api/pages/topic-{id}`；高级页面包路由 `/api/pages/{scope}/package`、`/api/pages/{scope}/detach`、`/api/pages/{scope}/source`、`/api/pages/{scope}/source/file`、`/api/pages/{scope}/export`；本地预览 `/landing/{scope}/index.html`。
+
+## 一键创建 3 专题 / 12 dcell 演示框架
+
+NexVain 内置一套适合农业科研专题灌注的结构化演示数据：
+
+- **寒地作物遥感**：大豆物候遥感观测、水稻冠层温度场、玉米多光谱影像、耕地遥感专题图。
+- **农业气象与环境**：黑龙江逐日气象站观测、ERA5-Land 气温数据、积温栅格与积温带、盐碱地物联网环境监测。
+- **农业视觉与病虫害**：玉米叶部病害图像、大豆田间表型影像、农作物病虫害标注样本、农业视觉数据生产成果。
+
+使用现有 Python 环境，在项目根目录运行：
+
+```bash
+python -m scripts.seed_showcase --dry-run
+python -m scripts.seed_showcase
+```
+
+该脚本会保留所有现有专题、dcell 和自定义首页，新增三个专题及对应的十二个 dcell，并自动关联。若总首页尚未自定义，还会写入一张适合展示三个专题的欢迎首页。所有指标均写为「待填充」，不伪造真实观测。四种公共模板（overview、metrics、gallery、research）均有示例。
+
+脚本执行前创建完整恢复点；使用设置键记录新建对象 ID，**重复运行不会重复创建或覆盖手动编辑的内容**。默认不自动发布，用户自行在 `/admin` 检查后发布。该脚本是用于测试灌注流程的脚手架，不是会删除或重建数据库的安装脚本。
+
+注意：若原有首页已经设置 `home_page`，则保持原状，不覆写；如果原项目已存在其他专题，本脚本会**追加**三个专题，而非将全站专题总数强制变成三个。
