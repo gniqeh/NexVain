@@ -179,6 +179,11 @@ def restore_checkpoint(ident:str):
         raise HTTPException(409,str(error))
     return {"ok":True,"restored":ident,"rescue_checkpoint":rescue}
 
+SOURCE_EDIT_EXT={".html",".htm",".css",".js",".mjs",".json",".svg",".txt",".csv"}
+SOURCE_EDIT_MAX=1024*1024
+class SourceIn(BaseModel):
+    content: str = Field(max_length=SOURCE_EDIT_MAX)
+
 # Home and topic landing pages have the same independent-page workflow as dcells.
 # The home page lives in settings; topic pages use their existing page JSON field.
 def landing_key(scope:str):
@@ -589,11 +594,6 @@ def import_directory(ident:int, request:DirectoryImportIn):
 
 
 # Source workspace: a dcell package is a sandboxed, self-contained static website.
-SOURCE_EDIT_EXT={".html",".htm",".css",".js",".mjs",".json",".svg",".txt",".csv"}
-SOURCE_EDIT_MAX=1024*1024
-class SourceIn(BaseModel):
-    content: str = Field(max_length=SOURCE_EDIT_MAX)
-
 def package_root(ident:int):
     with connection() as db:
         d=one(db,"dcells",ident)
