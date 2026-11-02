@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NexVain · 专题库管理</title>
+<link rel="stylesheet" href="https://unpkg.com/grapesjs@0.22.14/dist/css/grapes.min.css">
+<style>
+:root{--bg:#0a1625;--panel:#14253a;--line:#29435d;--text:#e8f3fe;--muted:#96b0c9;--blue:#38aee3}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:Arial,'Microsoft YaHei',sans-serif;margin:0}
+header{padding:18px 26px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+header strong{font-size:22px}button{background:#1c577b;border:1px solid #377395;color:#fff;padding:9px 15px;border-radius:7px;cursor:pointer}
+button:hover{background:#267eac}button.secondary{background:#21374b}button.danger{background:#6d3036;border-color:#8f4b54}
+.layout{display:flex;min-height:calc(100vh - 70px)}aside{width:210px;background:#101f30;padding:20px;border-right:1px solid var(--line)}
+aside button{display:block;width:100%;margin-bottom:9px;text-align:left;background:transparent;border:0;padding:13px}
+aside button.selected{background:#214763}main{padding:26px;flex:1;min-width:0}
+h2{font-size:23px;margin:0 0 18px}h3{margin:12px 0}.toolbar{display:flex;justify-content:space-between;gap:12px;margin-bottom:18px;align-items:center}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:12px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.muted{color:var(--muted);font-size:13px}
+input,textarea,select{background:#0d1c2c;border:1px solid #38536a;border-radius:7px;color:var(--text);padding:11px;width:100%;font:inherit}
+textarea{min-height:90px}label{display:block;margin:15px 0 6px;color:var(--muted);font-size:13px}
+.dialog{width:min(950px,95vw);max-height:92vh;background:#102238;color:var(--text);border:1px solid #38617c;border-radius:13px;padding:23px;overflow:auto}
+.dialog::backdrop{background:#000b}.dialog-head{display:flex;justify-content:space-between;align-items:center}
+#editor{height:540px;border:1px solid var(--line);background:white}
+.links label{margin:8px 0;display:flex;gap:10px;align-items:center}.links input{width:auto}
+.notice{padding:11px 14px;background:#263d52;border-radius:7px;color:#c9dded;margin-bottom:18px}
+a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!important}
+</style></head>
+<body>
+<header><strong>NexVain <span class="muted">专题数据展示管理</span></strong>
+<div class="row"><span id="status"></span><button class="secondary" onclick="window.open('/','_blank')">查看大屏</button><button onclick="publish()">发布静态站点</button></div></header>
+<div class="layout"><aside>
+<button id="nav-topics" class="selected" onclick="showTab('topics')">专题管理</button>
+<button id="nav-dcells" onclick="showTab('dcells')">dcell 管理</button>
+<button id="nav-appearance" onclick="showTab('appearance')">外观设置</button>
+</aside><main>
+<div class="notice">本地开发版：管理接口尚未启用身份认证，请仅在本机运行，不要暴露到公网。</div>
+<section id="topics-section"><div class="toolbar"><h2>专题管理</h2><button onclick="openRecord('topic')">+ 新建专题</button></div><div id="topics-list"></div></section>
+<section id="dcells-section" class="hidden"><div class="toolbar"><h2>dcell 管理</h2><button onclick="openRecord('dcell')">+ 新建 dcell</button></div><div id="dcells-list"></div></section>
+<section id="appearance-section" class="hidden"><h2>全局外观</h2><div class="card"><label>展示站点风格</label><select id="theme"><option value="blue">科技深蓝</option><option value="dark">深色简约</option><option value="light">浅色科研</option></select><p class="muted">全局主题用于所有专题首页和 dcell 页面，发布后生效。</p><button onclick="saveTheme()">保存主题</button></div></section>
+</main></div>
+<dialog id="record-dialog" class="dialog"><div class="dialog-head"><h2 id="form-title"></h2><button class="secondary" onclick="document.getElementById('record-dialog').close()">关闭</button></div>
+<form id="record-form" onsubmit="saveRecord(event)">
+<label>名称</label><input id="item-name" required maxlength="120">
+<label>简介</label><textarea id="item-desc"></textarea>
+<div id="topic-position"><label>专题排序</label><input id="item-position" type="number" value="0"></div>
+<div id="dcell-template" class="hidden"><label>dcell 起始模板</label><select id="item-template"><option value="standard">基础介绍</option><option value="metrics">指标展示</option><option value="gallery">图文展示</option><option value="custom">完全自定义</option></select></div>
+<div class="row" style="margin-top:20px"><button type="submit">保存基本信息</button><button type="button" class="secondary" id="design-btn" onclick="openEditor()">设计页面</button></div></form>
+<div id="relations-wrap" class="hidden"><hr style="border-color:#304d65;margin:20px 0"><h3 id="relations-title">关联 dcell</h3><div id="relations-content"></div></div>
+</dialog>
+<dialog id="editor-dialog" class="dialog" style="width:min(1450px,98vw)">
+<div class="dialog-head"><h2 id="editor-title">页面设计</h2><div class="row"><button onclick="saveDesign()">保存设计</button><button class="secondary" onclick="closeEditor()">关闭</button></div></div>
+<p class="muted">支持预置 HTML 组件及可视化编辑。首次加载编辑器需要联网；离线部署应将 GrapesJS 资源放到本地。当前静态发布保留安全 HTML 结构，不导出自定义 CSS。</p>
+<div id="editor"></div><textarea id="fallback-html" class="hidden" style="height:400px"></textarea>
+</dialog>
+<script src="https://unpkg.com/grapesjs@0.22.14/dist/grapes.min.js"></script>
+<script>
+const api=async(path,opts={})=>{
+ const res=await fetch('/api'+path,{...opts,headers:{'Content-Type':'application/json',...(opts.headers||{})}});
+ if(!res.ok)throw new Error((await res.text()).slice(0,400));return res.json();
+};
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let topics=[],dcells=[],kind='topic',current=null,editor=null;
+const seed={
+ standard:'<section class="panel"><h2>数据集概况</h2><p>请填写数据集介绍。</p></section>',
+ metrics:'<section class="panel"><h2>核心指标</h2><div class="cards"><div class="card"><h3>数据规模</h3><p>待填写</p></div><div class="card"><h3>覆盖区域</h3><p>待填写</p></div></div></section>',
+ gallery:'<section class="panel"><h2>图文展示</h2><p>请上传或填写经过脱敏的展示内容。</p></section>',
+ custom:'<section><h2>自定义内容</h2></section>'
+};
+function message(s){document.getElementById('status').textContent=s;setTimeout(()=>document.getElementById('status').textContent='',4000)}
+async function refresh(){
+ [topics,dcells]=await Promise.all([api('/topics'),api('/dcells')]);
+ document.getElementById('topics-list').innerHTML=topics.map(t=>'<div class="card"><div class="row"><h3>'+esc(t.name)+'</h3><button onclick="openRecord(\'topic\','+t.id+')">编辑首页 / 关联</button><button class="secondary" onclick="editDesign(\'topic\','+t.id+')">设计首页</button><button class="danger" onclick="removeRecord(\'topic\','+t.id+')">删除</button></div><p class="muted">'+esc(t.description)+'</p></div>').join('')||'<p class="muted">还没有专题。</p>';
+ document.getElementById('dcells-list').innerHTML=dcells.map(d=>'<div class="card"><div class="row"><h3>'+esc(d.name)+'</h3><button onclick="openRecord(\'dcell\','+d.id+')">编辑 / 关联专题</button><button class="secondary" onclick="editDesign(\'dcell\','+d.id+')">设计页面</button><button class="danger" onclick="removeRecord(\'dcell\','+d.id+')">删除</button></div><p class="muted">'+esc(d.description)+'</p></div>').join('')||'<p class="muted">还没有 dcell。</p>';
+}
+function showTab(tab){
+ for(const x of ['topics','dcells','appearance']){document.getElementById(x+'-section').classList.toggle('hidden',x!==tab);document.getElementById('nav-'+x).classList.toggle('selected',x===tab)}
+}
+async function openRecord(k,id=null){
+ kind=k;current=(k==='topic'?topics:dcells).find(x=>x.id===id)||null;
+ document.getElementById('form-title').textContent=(current?'编辑':'新建')+(k==='topic'?'专题':' dcell');
+ document.getElementById('item-name').value=current?.name||'';
+ document.getElementById('item-desc').value=current?.description||'';
+ document.getElementById('item-position').value=current?.position||0;
+ document.getElementById('item-template').value=current?.template||'standard';
+ document.getElementById('topic-position').classList.toggle('hidden',k!=='topic');
+ document.getElementById('dcell-template').classList.toggle('hidden',k!=='dcell');
+ document.getElementById('design-btn').disabled=!current;
+ document.getElementById('relations-wrap').classList.toggle('hidden',!current);
+ if(current){if(k==='topic')await loadTopicRelations();else await loadDcellRelations()}
+ document.getElementById('record-dialog').showModal();
+}
+async function saveRecord(event){
+ event.preventDefault();
+ const isTopic=kind==='topic';
+ const payload={name:document.getElementById('item-name').value.trim(),
+ description:document.getElementById('item-desc').value,
+ page:current?.page||{}};
+ if(isTopic)payload.position=Number(document.getElementById('item-position').value);
+ else payload.template=document.getElementById('item-template').value;
+ const path=isTopic?'/topics':'/dcells';
+ try{
+ const result=await api(path+(current?'/'+current.id:''),{method:current?'PUT':'POST',body:JSON.stringify(payload)});
+ await refresh();await openRecord(kind,result.id);message('已保存');
+ }catch(e){alert(e.message)}
+}
+async function removeRecord(k,id){
+ if(!confirm('删除后关联关系也会清除，确定删除？'))return;
+ try{await api((k==='topic'?'/topics/':'/dcells/')+id,{method:'DELETE'});await refresh()}catch(e){alert(e.message)}
+}
+async function loadTopicRelations(){
+ const rows=await api('/topics/'+current.id+'/dcells');const chosen=new Map(rows.map(r=>[r.id,r]));
+ document.getElementById('relations-title').textContent='此专题关联哪些 dcell';
+ document.getElementById('relations-content').innerHTML='<div class="links">'+dcells.map(d=>{
+ const r=chosen.get(d.id);
+ return '<label><input type="checkbox" class="rel-checkbox" value="'+d.id+'" '+(r?'checked':'')+'> '+esc(d.name)+'</label><input class="rel-alias" data-id="'+d.id+'" placeholder="此专题下的导航别名（可选）" value="'+esc(r?.alias||'')+'">';
+ }).join('')+'</div><button style="margin-top:15px" onclick="saveRelations()">保存关联</button>';
+}
+async function saveRelations(){
+ const selected=[...document.querySelectorAll('.rel-checkbox:checked')].map((node,i)=>{
+ const id=Number(node.value);const alias=document.querySelector('.rel-alias[data-id="'+id+'"]').value;
+ return {dcell_id:id,alias,position:i};
+ });
+ try{await api('/topics/'+current.id+'/dcells',{method:'PUT',body:JSON.stringify(selected)});message('关联已保存')}catch(e){alert(e.message)}
+}
+async function loadDcellRelations(){
+ const rows=await api('/dcells/'+current.id+'/topics');
+ document.getElementById('relations-title').textContent='已被哪些专题引用';
+ document.getElementById('relations-content').innerHTML=rows.map(x=>'<p>· '+esc(x.name)+(x.alias?'（'+esc(x.alias)+'）':'')+'</p>').join('')||'<p class="muted">尚未关联专题，请在专题管理中选择此 dcell。</p>';
+}
+function editDesign(k,id){const obj=(k==='topic'?topics:dcells).find(x=>x.id===id);kind=k;current=obj;openEditor()}
+function openEditor(){
+ if(!current)return;
+ const dialog=document.getElementById('editor-dialog');
+ document.getElementById('editor-title').textContent=current.name+' · 页面设计';
+ const initial=current.page?.html||(kind==='dcell'?seed[current.template]||seed.standard:'<section class="panel"><h2>专题介绍</h2><p>请填写专题首页内容。</p></section>');
+ if(editor){editor.destroy();editor=null}
+ const host=document.getElementById('editor');host.innerHTML='';
+ const fallback=document.getElementById('fallback-html');
+ if(window.grapesjs){
+  host.classList.remove('hidden');fallback.classList.add('hidden');
+  editor=grapesjs.init({container:'#editor',height:'540px',storageManager:false,
+   components:initial,styleManager:{sectors:[]},
+   blockManager:{appendTo:'.gjs-blocks-cs',blocks:[
+    {id:'heading',label:'标题',content:'<h2>新标题</h2>'},
+    {id:'text',label:'文本',content:'<p>点击修改文字内容</p>'},
+    {id:'panel',label:'内容区',content:'<section class="panel"><h2>标题</h2><p>简介</p></section>'},
+    {id:'cards',label:'指标卡片',content:seed.metrics},
+    {id:'table',label:'表格',content:'<table><tr><th>指标</th><th>数值</th></tr><tr><td>数据量</td><td>待填写</td></tr></table>'}
+   ]}});
+ }else{
+  host.classList.add('hidden');fallback.classList.remove('hidden');fallback.value=initial;
+ }
+ dialog.showModal();
+}
+function closeEditor(){document.getElementById('editor-dialog').close();if(editor){editor.destroy();editor=null}}
+async function saveDesign(){
+ if(!current)return;
+ const page={html:editor?editor.getHtml():document.getElementById('fallback-html').value,css:editor?editor.getCss():''};
+ const payload={name:current.name,description:current.description,page};
+ if(kind==='topic')payload.position=current.position;
+ else payload.template=current.template;
+ try{
+ await api((kind==='topic'?'/topics/':'/dcells/')+current.id,{method:'PUT',body:JSON.stringify(payload)});
+ await refresh();closeEditor();message('页面设计已保存，点击发布后展示生效');
+ }catch(e){alert(e.message)}
+}
+async function saveTheme(){
+ try{await api('/settings',{method:'PUT',body:JSON.stringify({theme:document.getElementById('theme').value})});message('主题已保存')}catch(e){alert(e.message)}
+}
+async function publish(){
+ if(!confirm('将当前数据发布成静态页面？请确认内容已经脱敏。'))return;
+ try{const r=await api('/publish',{method:'POST'});message('发布完成：'+r.topics+' 专题 / '+r.dcells+' dcell')}catch(e){alert(e.message)}
+}
+async function init(){await refresh();const s=await api('/settings');document.getElementById('theme').value=s.theme}
+init().catch(e=>alert('初始化失败：'+e.message));
+</script></body></html>
