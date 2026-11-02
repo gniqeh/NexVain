@@ -349,3 +349,55 @@ def test_existing_detached_template_media_is_repaired_at_publish():
     copied=PUBLIC/"custom"/("dcell-"+str(d["id"]))/"media"/upload.json()["name"]
     assert copied.is_file(), "publish should repair old detached pages from managed media"
     assert client.get(f"/custom/dcell-{d['id']}/media/{upload.json()['name']}").status_code==200
+
+def test_total_homepage_advanced_design_and_publish():
+    import io,zipfile
+    saved=client.put("/api/pages/home",json={"page":{"html":"<section><h2>自定义总首页</h2></section>","css":"h2{color:#4fe2c1}"}})
+    assert saved.status_code==200,saved.text
+    assert "自定义总首页" in client.get("/api/pages/home/generated-source").json()["content"]
+    assert client.post("/api/publish").status_code==200
+    site=client.get("/index.html").text
+    assert "自定义总首页" in site
+    assert 'class="nav"' in site
+    detached=client.post("/api/pages/home/detach")
+    assert detached.status_code==200,detached.text
+    files=client.get("/api/pages/home/source").json()["files"]
+    assert {"index.html","style.css","app.js"}.issubset({f["path"] for f in files})
+    html_content=client.get("/api/pages/home/source/file",params={"path":"index.html"})
+    assert html_content.status_code==200
+    assert "自定义总首页" in html_content.json()["content"]
+    assert client.put("/api/pages/home/source/file",params={"path":"index.html"},json={"content":"<h1>完整开发首页</h1>"}).status_code==200
+    assert client.post("/api/publish").status_code==200
+    result=client.get("/index.html").text
+    assert "custom/home/index.html" in result
+    assert 'class="nav"' in result
+    assert "完整开发首页" in client.get("/custom/home/index.html").text
+    export=client.get("/api/pages/home/export")
+    assert export.status_code==200
+    with zipfile.ZipFile(io.BytesIO(export.content)) as z:
+        assert b"\xe5\xae\x8c\xe6\x95\xb4" in z.read("index.html")
+    # Restore default homepage so other tests are independent.
+    assert client.put("/api/pages/home",json={"page":{}}).status_code==200
+
+
+def test_topic_landing_advanced_zip_import_and_navigation():
+    import io,zipfile
+    topic=client.post("/api/topics",json={"name":"独立专题首页"}).json()
+    key="topic-"+str(topic["id"])
+    archive=io.BytesIO()
+    with zipfile.ZipFile(archive,"w") as z:
+        z.writestr("index.html",'<link rel="stylesheet" href="style.css"><h1>高级专题页面</h1><script src="app.js"></script>')
+        z.writestr("style.css","h1{color:teal}")
+        z.writestr("app.js","console.log('topic')")
+    imported=client.post("/api/pages/"+key+"/package",files={"file":("site.zip",archive.getvalue(),"application/zip")})
+    assert imported.status_code==200,imported.text
+    assert client.get("/api/pages/"+key).json()["page"]["mode"]=="package"
+    assert client.post("/api/publish").status_code==200
+    outer=client.get("/topic-"+str(topic["id"])+".html").text
+    assert "custom/"+key+"/index.html" in outer
+    assert 'class="nav"' in outer
+    assert "高级专题页面" in client.get("/custom/"+key+"/index.html").text
+    assert client.put("/api/pages/"+key+"/source/file",params={"path":"style.css"},json={"content":"h1{color:cyan}"}).status_code==200
+    assert client.post("/api/publish").status_code==200
+    assert "color:cyan" in client.get("/custom/"+key+"/style.css").text
+    assert client.put("/api/pages/"+key+"/source/file",params={"path":"../outside.js"},json={"content":"no"}).status_code==400
