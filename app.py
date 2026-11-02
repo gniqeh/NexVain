@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.responses import FileResponse, Response, HTMLResponse, StreamingResponse
 import history_store
+import publish_checks
 from template_engine import TEMPLATES, DEFAULT_CONTENT, CSS as TEMPLATE_CSS, render_template
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -720,6 +721,16 @@ def render_document(title, intro, content, nav, theme, custom_css=""):
     <p class="intro">{html.escape(intro)}</p><section class="content">{content}</section>
     </main></div></body></html>"""
 
+@app.get("/api/publish/check")
+def check_current_publish():
+    return publish_checks.check(PUBLIC)
+
+@app.get("/api/assets/library")
+def assets_library():
+    return [{"url":"/media/"+p.name,"name":p.name,"bytes":p.stat().st_size}
+            for p in sorted(MEDIA.iterdir(),key=lambda p:p.stat().st_mtime,reverse=True)
+            if p.is_file() and re.fullmatch(r"[a-f0-9]{32}\\.(?:png|svg)",p.name)][:300]
+
 @app.get("/api/publish/status")
 def publish_status():
     with connection() as db:
@@ -780,6 +791,9 @@ def publish():
                 content=published_fragment(d["page"]) or '<div class="panel"><p>'+html.escape(d["description"])+'</p></div>'
             style=TEMPLATE_CSS if d.get("mode")=="template" else safe_css(d["page"].get("css",""))
             (staging/f'dcell-{d["id"]}.html').write_text(render_document(d["name"],d["description"],content,nav_html,theme,style),encoding="utf-8")
+        report=publish_checks.check(staging)
+        if not report["ok"]:
+            raise HTTPException(409,detail={"message":"Publish resource validation failed","report":report})
         old=ROOT/".published-old"
         if old.exists(): shutil.rmtree(old)
         if PUBLIC.exists(): PUBLIC.rename(old)
@@ -789,7 +803,7 @@ def publish():
         if staging.exists(): shutil.rmtree(staging)
     with connection() as db:
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES ('published_revision',?)",(str(draft_revision),))
-    return {"ok":True,"topics":len(topics),"dcells":len(dcells),"url":"/","published_revision":draft_revision}
+    return {"ok":True,"topics":len(topics),"dcells":len(dcells),"url":"/","published_revision":draft_revision,"validation":report}
 
 @app.get("/admin")
 def admin():
