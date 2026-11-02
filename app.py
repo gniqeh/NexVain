@@ -8,13 +8,14 @@ import io
 import uuid
 import math
 import zipfile
+import mimetypes
 import hmac
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
-from fastapi.responses import FileResponse, Response, HTMLResponse
+from fastapi.responses import FileResponse, Response, HTMLResponse, StreamingResponse
 from template_engine import TEMPLATES, DEFAULT_CONTENT, CSS as TEMPLATE_CSS, render_template
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -359,6 +360,154 @@ def import_directory(ident:int, request:DirectoryImportIn):
     with connection() as db:
         db.execute("UPDATE dcells SET mode='package' WHERE id=?",(ident,))
     return {"ok":True,"count":len(entries),"preview":f"/package/{ident}/index.html"}
+
+
+# Source workspace: a dcell package is a sandboxed, self-contained static website.
+SOURCE_EDIT_EXT={".html",".htm",".css",".js",".mjs",".json",".svg",".txt",".csv"}
+SOURCE_EDIT_MAX=1024*1024
+class SourceIn(BaseModel):
+    content: str = Field(max_length=SOURCE_EDIT_MAX)
+
+def package_root(ident:int):
+    with connection() as db:
+        d=one(db,"dcells",ident)
+    if d["mode"]!="package":
+        raise HTTPException(409,"Convert to an independent page first")
+    root=PACKAGES/str(ident)
+    if not (root/"index.html").is_file():
+        raise HTTPException(409,"No page package installed")
+    return root
+
+def editable_path(root:Path,filename:str):
+    relative=Path(filename)
+    if not filename or filename.startswith(("/",chr(92))) or chr(92) in filename or ":" in filename or ".." in relative.parts or relative.suffix.lower() not in SOURCE_EDIT_EXT:
+        raise HTTPException(400,"Invalid editable file path")
+    dest=(root/relative).resolve()
+    if not dest.is_relative_to(root.resolve()) or dest.is_symlink():
+        raise HTTPException(400,"Path outside page package")
+    return dest
+
+def zip_package(root:Path):
+    out=io.BytesIO()
+    with zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED) as archive:
+        for file in sorted(root.rglob("*")):
+            if file.is_symlink():
+                raise HTTPException(400,"Symlinks not allowed")
+            if file.is_file():
+                archive.write(file,file.relative_to(root).as_posix())
+    out.seek(0)
+    return out
+
+def standalone_html(d,theme):
+    if d["mode"]=="template":
+        tpl=d["template"] if d["template"] in TEMPLATES else "overview"
+        content=render_template(d["name"],d["description"],tpl,d.get("content",{}))
+        css=TEMPLATE_CSS
+    else:
+        content=published_fragment(d["page"])
+        css=safe_css(d["page"].get("css",""))
+    return render_document(d["name"],d["description"],content,
+                           '<a href="index.html">首页</a>',theme,css)
+
+def standalone_assets(root:Path,page_html:str):
+    # Package only locally-managed media explicitly referenced in generated HTML.
+    for match in set(re.findall(r'(?:["\\'])/?media/([a-f0-9]{32}\.(?:png|svg))',page_html)):
+        source=MEDIA/match
+        if source.is_file():
+            (root/"media").mkdir(exist_ok=True)
+            shutil.copy2(source,root/"media"/match)
+
+@app.get("/api/dcells/{ident}/source")
+def source_index(ident:int):
+    root=package_root(ident)
+    files=[]
+    for file in sorted(root.rglob("*")):
+        if file.is_file():
+            rel=file.relative_to(root).as_posix()
+            files.append({"path":rel,"size":file.stat().st_size,
+                          "editable":file.suffix.lower() in SOURCE_EDIT_EXT and file.stat().st_size<=SOURCE_EDIT_MAX})
+    return {"files":files,"preview":f"/package/{ident}/index.html"}
+
+@app.get("/api/dcells/{ident}/source/file")
+def get_source_file(ident:int,path:str):
+    root=package_root(ident)
+    file=editable_path(root,path)
+    if not file.is_file():raise HTTPException(404,"File not found")
+    if file.stat().st_size>SOURCE_EDIT_MAX:raise HTTPException(413,"File too large to edit")
+    try: value=file.read_text(encoding="utf-8")
+    except UnicodeError:raise HTTPException(400,"Text file must use UTF-8")
+    return {"path":path,"content":value}
+
+@app.put("/api/dcells/{ident}/source/file")
+def save_source_file(ident:int,path:str,item:SourceIn):
+    root=package_root(ident)
+    file=editable_path(root,path)
+    # Do not allow growing a package beyond the ZIP import limits.
+    encoded=item.content.encode("utf-8")
+    if len(encoded)>SOURCE_EDIT_MAX:raise HTTPException(413,"Source file exceeds 1 MB")
+    size=sum(f.stat().st_size for f in root.rglob("*") if f.is_file())
+    count=sum(1 for f in root.rglob("*") if f.is_file())
+    if size-(file.stat().st_size if file.exists() else 0)+len(encoded)>50*1024*1024:
+        raise HTTPException(413,"Package exceeds 50 MB")
+    if not file.exists() and count>=300:
+        raise HTTPException(413,"Package exceeds 300 files")
+    file.parent.mkdir(parents=True,exist_ok=True)
+    temporary=file.with_name(file.name+".writing")
+    temporary.write_bytes(encoded)
+    temporary.replace(file)
+    return {"ok":True,"path":path,"size":len(encoded)}
+
+@app.post("/api/dcells/{ident}/detach")
+def detach_to_source(ident:int):
+    with connection() as db:
+        d=one(db,"dcells",ident)
+        theme=db.execute("SELECT value FROM settings WHERE key='theme'").fetchone()[0]
+    if d["mode"]=="package":
+        return {"ok":True,"mode":"package","preview":f"/package/{ident}/index.html"}
+    rendered=standalone_html(d,theme)
+    # Original editor/template data remains intact in DB for future reference.
+    # Only the current dcell switches to independent source mode.
+    stage=PACKAGES/(str(ident)+"-source-staging")
+    shutil.rmtree(stage,ignore_errors=True)
+    stage.mkdir(parents=True)
+    css=re.search(r'<style>(.*?)</style>',rendered,re.S)
+    if css:
+        rendered=rendered[:css.start()]+'<link rel="stylesheet" href="style.css">'+rendered[css.end():]
+        (stage/"style.css").write_text(css.group(1),encoding="utf-8")
+    rendered=rendered.replace("</body>",'<script src="app.js"></script></body>')
+    (stage/"app.js").write_text("// 自定义 JavaScript，保存后预览即可生效。\\n",encoding="utf-8")
+    (stage/"index.html").write_text(rendered,encoding="utf-8")
+    standalone_assets(stage,rendered)
+    target=PACKAGES/str(ident)
+    old=PACKAGES/(str(ident)+"-source-old")
+    shutil.rmtree(old,ignore_errors=True)
+    if target.exists():target.rename(old)
+    stage.rename(target)
+    shutil.rmtree(old,ignore_errors=True)
+    with connection() as db:
+        db.execute("UPDATE dcells SET mode='package' WHERE id=?",(ident,))
+    return {"ok":True,"mode":"package","preview":f"/package/{ident}/index.html"}
+
+@app.get("/api/dcells/{ident}/export")
+def export_dcell(ident:int):
+    with connection() as db:
+        d=one(db,"dcells",ident)
+        theme=db.execute("SELECT value FROM settings WHERE key='theme'").fetchone()[0]
+    if d["mode"]=="package":
+        root=package_root(ident)
+        payload=zip_package(root)
+    else:
+        page=standalone_html(d,theme)
+        with io.BytesIO() as mem:
+            with zipfile.ZipFile(mem,"w",zipfile.ZIP_DEFLATED) as z:
+                z.writestr("index.html",page)
+                for filename in set(re.findall(r'(?:["\\'])/?media/([a-f0-9]{32}\.(?:png|svg))',page)):
+                    asset=MEDIA/filename
+                    if asset.is_file():z.write(asset,"media/"+filename)
+            mem.seek(0)
+            payload=io.BytesIO(mem.getvalue())
+    return StreamingResponse(payload,media_type="application/zip",
+        headers={"Content-Disposition":f'attachment; filename="nexvain-dcell-{ident}.zip"'})
 
 @app.get("/package/{ident}/{path:path}")
 def preview_package(ident:int,path:str):
