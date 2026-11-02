@@ -257,6 +257,57 @@ async def upload_page_package(ident: int,file: UploadFile=File(...)):
         db.execute("UPDATE dcells SET mode='package' WHERE id=?",(ident,))
     return {"ok":True,"count":len(entries),"preview":f"/package/{ident}/index.html"}
 
+
+class DirectoryImportIn(BaseModel):
+    path: str = Field(min_length=1,max_length=500)
+
+@app.post("/api/dcells/{ident}/import-directory")
+def import_directory(ident:int, request:DirectoryImportIn):
+    """Copy a static page directory from an explicitly configured import root."""
+    with connection() as db: one(db,"dcells",ident)
+    configured=os.environ.get("NEXVAIN_IMPORT_ROOT","")
+    if not configured:
+        raise HTTPException(403,"Set NEXVAIN_IMPORT_ROOT to enable directory import")
+    root=Path(configured).resolve()
+    if not root.is_dir():raise HTTPException(400,"Invalid import root")
+    candidate=Path(request.path)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise HTTPException(400,"Only a relative path under the import root is allowed")
+    source=(root/candidate).resolve()
+    if not source.is_relative_to(root) or not source.is_dir() or source==root:
+        raise HTTPException(400,"Directory outside import root")
+    entries=[]
+    size=0
+    for path in source.rglob("*"):
+        if path.is_symlink():raise HTTPException(400,"Symbolic links not allowed")
+        if not path.is_file():continue
+        relative=path.relative_to(source)
+        if path.suffix.lower() not in PACKAGE_EXT:
+            raise HTTPException(400,"Unsupported file type: "+str(relative))
+        length=path.stat().st_size
+        if length>15*1024*1024:raise HTTPException(413,"File exceeds 15MB")
+        size+=length
+        if size>50*1024*1024 or len(entries)>=300:
+            raise HTTPException(413,"Directory exceeds import limits")
+        entries.append((path,relative))
+    if not (source/"index.html").is_file():raise HTTPException(400,"index.html required")
+    stage=PACKAGES/(str(ident)+"-staging")
+    shutil.rmtree(stage,ignore_errors=True)
+    stage.mkdir(parents=True)
+    for path,relative in entries:
+        dest=stage/relative
+        dest.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(path,dest)
+    target=PACKAGES/str(ident)
+    previous=PACKAGES/(str(ident)+"-old")
+    shutil.rmtree(previous,ignore_errors=True)
+    if target.exists():target.rename(previous)
+    stage.rename(target)
+    shutil.rmtree(previous,ignore_errors=True)
+    with connection() as db:
+        db.execute("UPDATE dcells SET mode='package' WHERE id=?",(ident,))
+    return {"ok":True,"count":len(entries),"preview":f"/package/{ident}/index.html"}
+
 @app.get("/package/{ident}/{path:path}")
 def preview_package(ident:int,path:str):
     root=(PACKAGES/str(ident)).resolve()
