@@ -213,13 +213,25 @@ h1{font-size:30px}.intro{opacity:.75}.content{margin-top:24px}.panel{padding:26p
 """
 
 def safe_css(value):
-    # Avoid arbitrary CSS and external asset inclusion via style declarations.
-    # The first release uses the predefined global theme for published pages.
-    return ""
+    import tinycss2
+    allowed = {"color","background","background-color","font-size","font-weight","font-family","line-height","text-align","margin","padding","width","height","max-width","min-height","display","flex","flex-direction","gap","align-items","justify-content","grid-template-columns","border","border-radius","box-shadow","opacity"}
+    rules = []
+    for rule in tinycss2.parse_stylesheet(value or "", skip_whitespace=True, skip_comments=True):
+        if rule.type != "qualified-rule": continue
+        selector = tinycss2.serialize(rule.prelude).strip()
+        if not re.fullmatch(r"[\\w .,#>:+-]{1,180}", selector): continue
+        props = []
+        for item in tinycss2.parse_declaration_list(rule.content, skip_comments=True, skip_whitespace=True):
+            if item.type != "declaration" or item.lower_name not in allowed: continue
+            val = tinycss2.serialize(item.value).strip()
+            if len(val)>220 or re.search(r"url\\s*\\(|expression\\s*\\(|[{};<>@]|\\\\", val, re.I): continue
+            props.append(item.lower_name + ":" + val)
+        if props: rules.append(selector + "{" + ";".join(props) + "}")
+    return "\\n".join(rules)
 
-def render_document(title, intro, content, nav, theme):
+def render_document(title, intro, content, nav, theme, custom_css=""):
     bg,panel,fg,accent=THEMES[theme]
-    style=f":root{{--bg:{bg};--panel:{panel};--text:{fg};--accent:{accent}}}"+BASE_CSS
+    style=f":root{{--bg:{bg};--panel:{panel};--text:{fg};--accent:{accent}}}"+BASE_CSS+custom_css
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>{html.escape(title)} · NexVain</title><style>{style}</style></head>
@@ -257,7 +269,7 @@ def publish():
             owned=[r for r in links if r["topic_id"]==t["id"] and r["dcell_id"] in by_id]
             cards="".join(f'<a class="card" href="dcell-{r["dcell_id"]}.html">{html.escape(r["alias"] or by_id[r["dcell_id"]]["name"])}</a>' for r in owned)
             content=fragment(t["page"])+f'<div class="cards">{cards}</div>'
-            (staging/f'topic-{t["id"]}.html').write_text(render_document(t["name"],t["description"],content,nav_html,theme),encoding="utf-8")
+            (staging/f'topic-{t["id"]}.html').write_text(render_document(t["name"],t["description"],content,nav_html,theme,safe_css(t["page"].get("css",""))),encoding="utf-8")
         for d in dcells:
             content=fragment(d["page"]) or '<div class="panel"><p>'+html.escape(d["description"])+'</p></div>'
             (staging/f'dcell-{d["id"]}.html').write_text(render_document(d["name"],d["description"],content,nav_html,theme),encoding="utf-8")
