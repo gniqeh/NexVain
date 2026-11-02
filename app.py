@@ -683,16 +683,17 @@ THEMES = {
 }
 BASE_CSS = """
 *{box-sizing:border-box}
-html{width:1920px;height:1080px;margin:0}
-body{width:1920px;height:1080px;margin:0;font-family:Inter,'Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text)}
-.shell{display:flex;width:1920px;height:1080px;overflow:hidden}
-.nav{width:300px;height:1080px;flex:0 0 300px;overflow-y:auto;background:var(--panel);padding:24px 15px}
+html,body{width:100%;height:100%;margin:0;overflow:hidden}
+body{font-family:Inter,'Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text)}
+.shell{position:absolute;left:0;top:0;display:flex;width:1920px;height:1080px;transform-origin:0 0;overflow:hidden}
+.nav{width:300px;height:1080px;flex:0 0 300px;overflow:hidden;background:var(--panel);padding:24px 15px}
 .nav h2{font-size:22px;margin:0 0 28px}
 .nav a{display:block;color:var(--text);padding:14px 16px;text-decoration:none;border-radius:7px;font-size:17px}
 .nav a:hover,.nav a.current{background:var(--accent);color:#061422}
 .nav .sub{padding-left:27px;font-size:16px}
 .nav .group{margin-top:14px;font-weight:700}
-.stage{width:1620px;height:1080px;flex:0 0 1620px;min-width:0;overflow-y:auto;overflow-x:hidden;padding:38px 48px}
+.stage{width:1620px;height:1080px;flex:0 0 1620px;min-width:0;overflow:hidden;padding:38px 48px}
+.stage-inner{width:100%;transform-origin:0 0}
 h1{font-size:30px}.intro{opacity:.75}.content{margin-top:24px}
 .panel{padding:26px;background:var(--panel);border-radius:14px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px}
@@ -725,9 +726,35 @@ def render_document(title, intro, content, nav, theme, custom_css=""):
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>{html.escape(title)} · NexVain</title><style>{style}</style></head>
     <body><div class="shell"><aside class="nav"><h2>NexVain</h2>{nav}</aside>
-    <main class="stage"><h1>{html.escape(title)}</h1>
+    <main class="stage"><div class="stage-inner"><h1>{html.escape(title)}</h1>
     <p class="intro">{html.escape(intro)}</p><section class="content">{content}</section>
-    </main></div>
+    </div></main></div>
+    <script>
+    (()=>{{
+      const shell=document.querySelector('.shell');
+      const stage=document.querySelector('.stage');
+      const inner=document.querySelector('.stage-inner');
+      let pending=false;
+      function fit(){{
+        pending=false;
+        // Fixed 1920×1080 layout coordinates, but fill the available host viewport.
+        // Independent X/Y scaling avoids blank margins at non-16:9 host ratios.
+        shell.style.transform='scale('+window.innerWidth/1920+','+window.innerHeight/1080+')';
+        // A content-heavy dcell must shrink to fit rather than create a scrollbar.
+        inner.style.transform='none';
+        const available=stage.clientHeight-76;
+        const natural=inner.scrollHeight;
+        const ratio=Math.min(1,available/Math.max(available,natural));
+        inner.style.transform='scale('+ratio+')';
+      }}
+      function schedule(){{if(!pending){{pending=true;requestAnimationFrame(fit);}}}}
+      window.addEventListener('resize',schedule);
+      window.addEventListener('load',schedule);
+      inner.querySelectorAll('img').forEach(img=>img.addEventListener('load',schedule));
+      if(document.fonts)document.fonts.ready.then(schedule);
+      schedule();
+    }})();
+    </script>
     </body></html>"""
 
 @app.get("/api/publish/check")
