@@ -192,14 +192,14 @@ function bindReorder(container, selector){
 function bindRelationDrag(){const el=document.querySelector('#relations-content .links');if(el)bindReorder(el,'.rel-row');}
 function bindTopicDrag(){
  const el=document.getElementById('topics-list');bindReorder(el,'.topic-item');
- el.addEventListener('drop',async e=>{
+ el.ondrop=async e=>{
   e.preventDefault();
   const order=[...el.querySelectorAll('.topic-item')].map(x=>Number(x.dataset.topicId));
   try{for(let i=0;i<order.length;i++){
    const t=topics.find(x=>x.id===order[i]);if(!t||t.position===i)continue;
    await api('/topics/'+t.id,{method:'PUT',body:JSON.stringify({name:t.name,description:t.description,page:t.page,position:i})});
   }await refresh();message('专题排序已保存，发布后生效');}catch(err){alert(err.message)}
- });
+ };
 }
 async function loadAssets(){
  try{
