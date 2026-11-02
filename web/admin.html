@@ -339,7 +339,7 @@ async function saveDesign(){
  else {payload.template=current.template;payload.mode=current.mode||'editor';payload.content=current.content||{};}
  try{
  if(kind==='home')await api('/pages/home',{method:'PUT',body:JSON.stringify({page})});
- elseawait api((kind==='topic'?'/topics/':'/dcells/')+current.id,{method:'PUT',body:JSON.stringify(payload)});
+ else await api((kind==='topic'?'/topics/':'/dcells/')+current.id,{method:'PUT',body:JSON.stringify(payload)});
  await refresh();closeEditor();message('页面设计已保存，点击发布后展示生效');
  }catch(e){alert(e.message)}
 }
