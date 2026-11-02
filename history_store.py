@@ -103,20 +103,47 @@ def restore(data:Path,public:Path,ident:str):
                     out.parent.mkdir(parents=True,exist_ok=True)
                     with z.open(member) as src,out.open("wb") as dst:
                         shutil.copyfileobj(src,dst)
+            # Prepare replacements before touching the active directories.
+            for name in ("packages","published"):
+                if not (stage/name).exists(): (stage/name).mkdir()
             src=sqlite3.connect(stage/"database.sqlite3")
             try:
-                check=src.execute("PRAGMA integrity_check").fetchone()
-                if check[0]!="ok":raise ValueError("Invalid SQLite backup")
-                dest=sqlite3.connect(db)
-                try:src.backup(dest)
-                finally:dest.close()
+                if src.execute("PRAGMA integrity_check").fetchone()[0]!="ok":
+                    raise ValueError("Invalid SQLite backup")
+                # Keep a recoverable DB image in memory for rollback on failure.
+                current=sqlite3.connect(":memory:")
+                live=sqlite3.connect(db)
+                try:live.backup(current)
+                finally:live.close()
+                old_dirs=[]
+                try:
+                    for name,target in (("packages",packages),("published",published)):
+                        previous=target.with_name(target.name+"-restore-old")
+                        if previous.exists():shutil.rmtree(previous)
+                        had_target=target.exists()
+                        if had_target:target.rename(previous)
+                        try:(stage/name).rename(target)
+                        except Exception:
+                            if had_target:previous.rename(target)
+                            raise
+                        old_dirs.append((target,previous,had_target))
+                    dest=sqlite3.connect(db)
+                    try:
+                        src.backup(dest)
+                        if dest.execute("PRAGMA integrity_check").fetchone()[0]!="ok":
+                            raise ValueError("Restored SQLite failed integrity check")
+                    finally:dest.close()
+                except Exception:
+                    for target,previous,had_target in reversed(old_dirs):
+                        if target.exists():shutil.rmtree(target)
+                        if had_target:previous.rename(target)
+                    dest=sqlite3.connect(db)
+                    try:current.backup(dest)
+                    finally:dest.close()
+                    raise
+                else:
+                    for target,previous,had_target in old_dirs:
+                        if previous.exists():shutil.rmtree(previous)
+                finally:current.close()
             finally:src.close()
-            for name,target in (("packages",packages),("published",published)):
-                staged=stage/name
-                if not staged.exists():staged.mkdir()
-                previous=target.with_name(target.name+"-restore-old")
-                if previous.exists():shutil.rmtree(previous)
-                if target.exists():target.rename(previous)
-                shutil.copytree(staged,target)
-                if previous.exists():shutil.rmtree(previous)
         audit(data,{"action":"restore","snapshot":ident,"detail":"Restored all tracked content"})
