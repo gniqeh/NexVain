@@ -180,3 +180,48 @@ def test_new_template_has_default_content():
     }).json()
     assert result["content"]["metrics"]
     assert "dcell-metric" in client.get(f"/api/dcells/{result['id']}/preview").text
+
+def test_source_workspace_template_to_editable_zip():
+    import io,zipfile
+    d=client.post("/api/dcells",json={"name":"源码测试","mode":"template","template":"metrics",
+      "content":{"summary":"可编辑内容","metrics":[{"label":"图像","value":"123"}]}}).json()
+    download=client.get(f"/api/dcells/{d['id']}/export")
+    assert download.status_code==200
+    with zipfile.ZipFile(io.BytesIO(download.content)) as z:
+        assert "index.html" in z.namelist()
+        assert "可编辑内容" in z.read("index.html").decode()
+    result=client.post(f"/api/dcells/{d['id']}/detach")
+    assert result.status_code==200,result.text
+    assert client.get(f"/api/dcells/{d['id']}/source").status_code==200
+    original=client.get(f"/api/dcells/{d['id']}/source/file",params={"path":"index.html"})
+    assert original.status_code==200
+    assert "可编辑内容" in original.json()["content"]
+    saved=client.put(f"/api/dcells/{d['id']}/source/file",params={"path":"style.css"},
+      json={"content":"body{font-size:20px}"})
+    assert saved.status_code==200,saved.text
+    saved=client.put(f"/api/dcells/{d['id']}/source/file",params={"path":"app.js"},
+      json={"content":"document.body.dataset.test='ok'"})
+    assert saved.status_code==200
+    assert client.put(f"/api/dcells/{d['id']}/source/file",
+      params={"path":"../outside.js"},json={"content":"bad"}).status_code==400
+    assert client.post("/api/publish").status_code==200
+    assert "可编辑内容" in client.get(f"/custom/dcell-{d['id']}/index.html").text
+    assert "font-size:20px" in client.get(f"/custom/dcell-{d['id']}/style.css").text
+    zip_response=client.get(f"/api/dcells/{d['id']}/export")
+    with zipfile.ZipFile(io.BytesIO(zip_response.content)) as z:
+        assert z.read("app.js").decode()=="document.body.dataset.test='ok'"
+        assert z.read("style.css").decode()=="body{font-size:20px}"
+
+
+def test_source_workspace_package_edit_in_place():
+    import io,zipfile
+    d=client.post("/api/dcells",json={"name":"外部页面","mode":"package"}).json()
+    archive=io.BytesIO()
+    with zipfile.ZipFile(archive,"w") as z:
+        z.writestr("index.html","<h1>旧页面</h1>")
+        z.writestr("main.js","console.log('old')")
+    assert client.post(f"/api/dcells/{d['id']}/package",
+      files={"file":("site.zip",archive.getvalue(),"application/zip")}).status_code==200
+    assert client.put(f"/api/dcells/{d['id']}/source/file",
+      params={"path":"index.html"},json={"content":"<h1>新页面</h1>"}).status_code==200
+    assert "新页面" in client.get(f"/package/{d['id']}/index.html").text
