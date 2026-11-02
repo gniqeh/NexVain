@@ -172,3 +172,16 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8000
 ## 固定 1920×1080 嵌入展示（最新）
 
 NexVain 是上级系统中的固定画布模块。专题首页和 dcell 外层展示页面统一固定为 **1920×1080**，左导航宽 300px，右内容区宽 1620px。内部内容过长时在展示区滚动；窗口尺寸变化不会导致布局重新换行成移动端模式。已移除全屏、轮播、自动跳页和键盘翻页控件。较小的宿主容器应由上级系统自行裁切或按比例缩放整个 iframe。旧版文档中提到的全屏与轮播操作均已废止。
+
+## 总首页与专题首页高级开发（V0.10）
+
+不只 dcell 支持独立页面，总首页和每个专题首页也支持同样的创作方式：
+
+1. 管理后台 → **专题管理** → 顶部 **专题库总首页**，点击「可视化设计」使用原 GrapesJS，或点击「高级源码 / ZIP」进入源码工作台。
+2. 每个专题卡片提供「可视化设计」及「高级源码 / ZIP」。专题首页独立设计，不改变它引用的 dcell。
+3. 高级源码工作台支持预览当前生成的 HTML、复制、导出 ZIP、转换为独立 HTML/CSS/JS，并可打开 `index.html`、`style.css`、`app.js` 等文件直接编辑和临时预览。也支持导入由外部工具或 AI 制作的完整 ZIP，根目录须有 `index.html`。
+4. **静态发布时仍保留 NexVain 左侧导航**，在首页/专题内容区中以受限 iframe 展示独立网页。无需新建专题或 dcell，也不改变现有网页导航入口。
+5. 管理页面保存只生成草稿，仍需点击「发布静态站点」。保留原有资源依赖检查、操作快照及历史回滚。
+6. 原先没有做独立设计的总首页仍显示专题卡片，没有自定义设计的专题首页仍显示相关 dcell 卡片，确保升级不会破坏存量页面。
+
+后台 API：`GET/PUT /api/pages/home`、`GET/PUT /api/pages/topic-{id}`；高级页面包路由 `/api/pages/{scope}/package`、`/api/pages/{scope}/detach`、`/api/pages/{scope}/source`、`/api/pages/{scope}/source/file`、`/api/pages/{scope}/export`；本地预览 `/landing/{scope}/index.html`。
