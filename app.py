@@ -448,7 +448,7 @@ def standalone_html(d,theme):
 
 def standalone_assets(root:Path,page_html:str):
     # Package only locally-managed media explicitly referenced in generated HTML.
-    for match in set(re.findall(r"media/([a-f0-9]{32}\\.(?:png|svg))", page_html)):
+    for match in set(re.findall(r"media/([a-f0-9]{32}\.(?:png|svg))", page_html)):
         source=MEDIA/match
         if source.is_file():
             (root/"media").mkdir(exist_ok=True)
@@ -547,7 +547,7 @@ def export_dcell(ident:int):
         with io.BytesIO() as mem:
             with zipfile.ZipFile(mem,"w",zipfile.ZIP_DEFLATED) as z:
                 z.writestr("index.html",page)
-                for filename in set(re.findall(r"media/([a-f0-9]{32}\\.(?:png|svg))", page)):
+                for filename in set(re.findall(r"media/([a-f0-9]{32}\.(?:png|svg))", page)):
                     asset=MEDIA/filename
                     if asset.is_file():z.write(asset,"media/"+filename)
             mem.seek(0)
@@ -804,7 +804,19 @@ def publish():
             source=PACKAGES/str(d["id"])
             if not (source/"index.html").is_file():
                 raise HTTPException(409,"No package for dcell "+str(d["id"]))
-            shutil.copytree(source,staging/"custom"/("dcell-"+str(d["id"])))
+            destination=staging/"custom"/("dcell-"+str(d["id"]))
+            shutil.copytree(source,destination)
+            # Repair previously detached template pages whose media subdirectory
+            # was absent due to the old managed-asset filename regex.
+            for page_file in destination.rglob("*.html"):
+                page_html=page_file.read_text(encoding="utf-8")
+                for match in re.findall(r'(?:(?:src|href)=["\\\'])media/([a-f0-9]{32}\\.(?:png|svg))',page_html):
+                    local=page_file.parent/"media"/match
+                    managed=MEDIA/match
+                    if not local.exists() and managed.is_file():
+                        local.parent.mkdir(parents=True,exist_ok=True)
+                        shutil.copy2(managed,local)
+
     # Export only re-encoded managed assets, never upload originals or DB files.
     shutil.copytree(MEDIA, staging / "media")
     try:
