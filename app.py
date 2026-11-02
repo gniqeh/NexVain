@@ -176,7 +176,7 @@ def list_dcells():
 def create_dcell(item: DcellIn):
     with connection() as db:
         cur=db.execute("INSERT INTO dcells(name,description,template,page,mode,content) VALUES (?,?,?,?,?,?)",
-            (item.name,item.description,item.template,json.dumps(item.page,ensure_ascii=False),item.mode,json.dumps(item.content,ensure_ascii=False)))
+            (item.name,item.description,item.template,json.dumps(item.page,ensure_ascii=False),item.mode,json.dumps(item.content or (DEFAULT_CONTENT if item.mode=="template" else {}),ensure_ascii=False)))
         return one(db,"dcells",cur.lastrowid)
 
 @app.put("/api/dcells/{ident}")
