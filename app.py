@@ -763,7 +763,7 @@ def check_current_publish():
 def assets_library():
     return [{"url":"/media/"+p.name,"name":p.name,"bytes":p.stat().st_size}
             for p in sorted(MEDIA.iterdir(),key=lambda p:p.stat().st_mtime,reverse=True)
-            if p.is_file() and re.fullmatch(r"[a-f0-9]{32}\\.(?:png|svg)",p.name)][:300]
+            if p.is_file() and re.fullmatch(r"[a-f0-9]{32}\.(?:png|svg)",p.name)][:300]
 
 @app.get("/api/publish/status")
 def publish_status():
