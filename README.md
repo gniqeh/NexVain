@@ -32,7 +32,7 @@ FastAPI + SQLite + GrapesJS + HTML/CSS/JavaScript。SQLite 文件自动创建于
 
 ## 当前原型的限制
 
-- **管理 API 尚未加身份认证，仅限本机开发使用。请勿将 8000 端口或 /admin、/api 暴露公网。**
+- 管理 API 已增加可选 HTTP Basic Auth，未设置密码时仅允许本地访问。仍不建议直接暴露公网；生产环境应部署 HTTPS、独立管理域和完整鉴权。
 - GrapesJS 编辑器当前通过外部 CDN 加载；断网时回退为 HTML 文本编辑。离线部署需将编辑器依赖打包到本地；已发布 SVG 图表和 PNG 图片离线可用。
 - 现在支持图片上传（图片重新编码为 PNG，剥离 EXIF），以及通过输入名称/数值生成柱状图、折线图 SVG，并将其插入页面。图表目前为静态 SVG，不是 ECharts 交互图表。地图、复杂模板还未接入。
 - 发布过程保留白名单 HTML/CSS 属性，不支持任意脚本；编辑器中的部分高级样式和交互可能不能输出。发布生成的 SVG 和 PNG 文件与静态站点一同复制。
@@ -47,6 +47,31 @@ pytest -q
 ```
 
 此仓库已配置 GitHub Actions 进行基础语法和接口测试。
+
+## dcell 外部页面挂载（开发版）
+
+允许绕过 GrapesJS，直接上传自己制作的静态网站。操作：
+
+1. 创建 dcell，在「页面来源」选择「外部静态页面包 ZIP」，保存。
+2. 将网页目录打成 ZIP，ZIP 根目录必须有 `index.html`。内部可以有 `css/`、`js/`、`images/`、`data/`。
+3. 上传 ZIP，后台保存到 `data/packages/<dcell_id>/`；可预览。
+4. 点击发布，文件会出现在 `published/custom/dcell-<id>/`，在 dcell 展示页中以 `iframe sandbox="allow-scripts"` 加载。
+
+单 ZIP 不超过 50MB，最多 300 文件，单文件不超过 15MB（解压后总量也不超过 50MB）。只允许静态网页常用扩展名，拦截路径穿越及符号链接。
+
+**安全说明：** ZIP 是可执行 HTML/JS。只导入可信来源，提前脱敏，不要上传原始科研数据。页面默认嵌入 sandbox iframe，可能限制一些需要同源访问、弹窗或第三方网络接口的功能。正式面向公网运行时，建议让自定义页面使用独立静态域名，不要把管理接口与不可信 HTML 放在同一安全域。
+
+## 管理员访问
+
+默认仅供本机 `127.0.0.1` 使用，远程访问管理 API 必须设置环境变量。示例：
+
+```bash
+export NEXVAIN_ADMIN_USER=admin
+export NEXVAIN_ADMIN_PASSWORD='替换为高强度密码'
+python -m uvicorn app:app --host 127.0.0.1 --port 8000
+```
+
+后台采用浏览器 HTTP Basic Auth。公网部署需要 HTTPS、反向代理防护和更完整的鉴权与审计，不能把开发服务直接暴露出去。
 
 ## 本轮新增
 
