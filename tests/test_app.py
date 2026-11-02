@@ -185,6 +185,9 @@ def test_source_workspace_template_to_editable_zip():
     import io,zipfile
     d=client.post("/api/dcells",json={"name":"源码测试","mode":"template","template":"metrics",
       "content":{"summary":"可编辑内容","metrics":[{"label":"图像","value":"123"}]}}).json()
+    generated=client.get(f"/api/dcells/{d['id']}/generated-source")
+    assert generated.status_code==200
+    assert "可编辑内容" in generated.json()["content"]
     download=client.get(f"/api/dcells/{d['id']}/export")
     assert download.status_code==200
     with zipfile.ZipFile(io.BytesIO(download.content)) as z:
