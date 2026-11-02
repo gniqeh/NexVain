@@ -178,6 +178,187 @@ def restore_checkpoint(ident:str):
     except (ValueError,OSError,sqlite3.DatabaseError,zipfile.BadZipFile) as error:
         raise HTTPException(409,str(error))
     return {"ok":True,"restored":ident,"rescue_checkpoint":rescue}
+
+# Home and topic landing pages have the same independent-page workflow as dcells.
+# The home page lives in settings; topic pages use their existing page JSON field.
+def landing_key(scope:str):
+    if scope=="home":return "home"
+    if re.fullmatch(r"topic-[1-9][0-9]*",scope):
+        ident=int(scope.split("-",1)[1])
+        with connection() as db:one(db,"topics",ident)
+        return scope
+    raise HTTPException(404,"Unknown landing page")
+
+def landing_state(scope:str):
+    key=landing_key(scope)
+    with connection() as db:
+        if key=="home":
+            row=db.execute("SELECT value FROM settings WHERE key='home_page'").fetchone()
+            page=json.loads(row[0]) if row else {}
+            return {"name":"专题库首页","description":"农业专题数据资源展示","page":page}
+        topic=one(db,"topics",int(key.split("-",1)[1]))
+        return {"name":topic["name"],"description":topic["description"],"page":topic["page"]}
+
+def set_landing_page(scope:str,page:dict):
+    key=landing_key(scope)
+    with connection() as db:
+        if key=="home":
+            db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('home_page',?)",
+                       (json.dumps(page,ensure_ascii=False),))
+        else:
+            db.execute("UPDATE topics SET page=? WHERE id=?",
+                       (json.dumps(page,ensure_ascii=False),int(key.split("-",1)[1])))
+
+@app.get("/api/pages/{scope}")
+def get_landing_page(scope:str):
+    return landing_state(scope)
+
+class LandingIn(BaseModel):
+    page: dict
+
+@app.put("/api/pages/{scope}")
+def update_landing_page(scope:str,item:LandingIn):
+    set_landing_page(scope,item.page)
+    return landing_state(scope)
+
+def landing_package_root(scope:str):
+    state=landing_state(scope)
+    if state["page"].get("mode")!="package":raise HTTPException(409,"Convert to independent page first")
+    root=PACKAGES/landing_key(scope)
+    if not (root/"index.html").is_file():raise HTTPException(409,"Page package missing")
+    return root
+
+def install_landing_zip(raw:bytes,scope:str):
+    key=landing_key(scope)
+    if len(raw)>50*1024*1024:raise HTTPException(413,"ZIP exceeds 50 MB")
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            infos=z.infolist()
+            if not 0<len(infos)<=300:raise ValueError("Invalid file count")
+            total=0
+            entries=[]
+            for info in infos:
+                if info.is_dir():continue
+                path=Path(info.filename)
+                mode=(info.external_attr>>16)&0o170000
+                if (info.filename.startswith("/") or chr(92) in info.filename or
+                    ".." in path.parts or ":" in info.filename or
+                    path.suffix.lower() not in PACKAGE_EXT or
+                    mode not in (0,0o100000) or info.file_size>15*1024*1024):
+                    raise ValueError("Unsafe ZIP path or file")
+                total+=info.file_size
+                if total>50*1024*1024:raise ValueError("Uncompressed ZIP too large")
+                entries.append((info,path))
+            if not any(str(path)=="index.html" for _,path in entries):
+                raise ValueError("Root index.html required")
+            stage=PACKAGES/(key+"-incoming")
+            shutil.rmtree(stage,ignore_errors=True)
+            stage.mkdir()
+            for info,path in entries:
+                dest=stage/path
+                dest.parent.mkdir(parents=True,exist_ok=True)
+                with z.open(info) as src,dest.open("wb") as dst:shutil.copyfileobj(src,dst)
+        target=PACKAGES/key
+        backup=PACKAGES/(key+"-previous")
+        shutil.rmtree(backup,ignore_errors=True)
+        if target.exists():target.rename(backup)
+        try:stage.rename(target)
+        except Exception:
+            if backup.exists():backup.rename(target)
+            raise
+        shutil.rmtree(backup,ignore_errors=True)
+    except (OSError,ValueError,zipfile.BadZipFile) as exc:
+        raise HTTPException(400,str(exc))
+    state=landing_state(scope)
+    page={**state["page"],"mode":"package"}
+    set_landing_page(scope,page)
+    return {"ok":True,"count":len(entries),"preview":f"/landing/{key}/index.html"}
+
+@app.post("/api/pages/{scope}/package")
+async def upload_landing_package(scope:str,file:UploadFile=File(...)):
+    return install_landing_zip(await file.read(50*1024*1024+1),scope)
+
+@app.get("/api/pages/{scope}/source")
+def landing_source_index(scope:str):
+    root=landing_package_root(scope)
+    return {"files":[{"path":p.relative_to(root).as_posix(),"size":p.stat().st_size,
+                      "editable":p.suffix.lower() in SOURCE_EDIT_EXT and p.stat().st_size<=SOURCE_EDIT_MAX}
+                     for p in sorted(root.rglob("*")) if p.is_file()]}
+
+@app.get("/api/pages/{scope}/source/file")
+def landing_get_source_file(scope:str,path:str):
+    root=landing_package_root(scope)
+    file=editable_path(root,path)
+    if not file.is_file():raise HTTPException(404,"Source file missing")
+    if file.stat().st_size>SOURCE_EDIT_MAX:raise HTTPException(413,"File too large")
+    try:return {"path":path,"content":file.read_text(encoding="utf-8")}
+    except UnicodeError:raise HTTPException(400,"Text file must be UTF-8")
+
+@app.put("/api/pages/{scope}/source/file")
+def landing_save_source_file(scope:str,path:str,item:SourceIn):
+    root=landing_package_root(scope)
+    file=editable_path(root,path)
+    data=item.content.encode("utf-8")
+    if len(data)>SOURCE_EDIT_MAX:raise HTTPException(413,"File too large")
+    files=[p for p in root.rglob("*") if p.is_file()]
+    if not file.exists() and len(files)>=300:raise HTTPException(413,"Too many files")
+    if sum(p.stat().st_size for p in files)-(file.stat().st_size if file.exists() else 0)+len(data)>50*1024*1024:
+        raise HTTPException(413,"Package too large")
+    file.parent.mkdir(parents=True,exist_ok=True)
+    temporary=file.with_name(file.name+".writing")
+    temporary.write_bytes(data);temporary.replace(file)
+    return {"ok":True,"path":path,"size":len(data)}
+
+@app.post("/api/pages/{scope}/detach")
+def landing_detach(scope:str):
+    state=landing_state(scope)
+    if state["page"].get("mode")=="package":
+        return {"ok":True,"preview":f"/landing/{landing_key(scope)}/index.html"}
+    # The container is rendered by NexVain; the generated package owns its content.
+    html_body=published_fragment(state["page"])
+    if not html_body:
+        html_body='<div class="panel"><h2>'+html.escape(state["name"])+'</h2><p>'+html.escape(state["description"])+'</p></div>'
+    content='<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="style.css"></head><body>'+html_body+'<script src="app.js"></script></body></html>'
+    css=BASE_CSS+safe_css(state["page"].get("css",""))
+    key=landing_key(scope)
+    stage=PACKAGES/(key+"-convert")
+    shutil.rmtree(stage,ignore_errors=True);stage.mkdir()
+    (stage/"index.html").write_text(content,encoding="utf-8")
+    (stage/"style.css").write_text(css,encoding="utf-8")
+    (stage/"app.js").write_text("// 自定义首页逻辑\\n",encoding="utf-8")
+    standalone_assets(stage,content)
+    target=PACKAGES/key
+    backup=PACKAGES/(key+"-old")
+    shutil.rmtree(backup,ignore_errors=True)
+    if target.exists():target.rename(backup)
+    stage.rename(target);shutil.rmtree(backup,ignore_errors=True)
+    set_landing_page(scope,{**state["page"],"mode":"package"})
+    return {"ok":True,"preview":f"/landing/{key}/index.html"}
+
+@app.get("/api/pages/{scope}/export")
+def export_landing_page(scope:str):
+    state=landing_state(scope)
+    if state["page"].get("mode")=="package":
+        payload=zip_package(landing_package_root(scope))
+    else:
+        html_body=published_fragment(state["page"]) or "<p>"+html.escape(state["description"])+"</p>"
+        with io.BytesIO() as out:
+            with zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED) as z:
+                z.writestr("index.html",'<html lang="zh-CN"><head><meta charset="utf-8"><style>'+BASE_CSS+safe_css(state["page"].get("css",""))+'</style></head><body>'+html_body+'</body></html>')
+                for filename in set(re.findall(r"media/([a-f0-9]{32}\.(?:png|svg))",html_body)):
+                    asset=MEDIA/filename
+                    if asset.is_file():z.write(asset,"media/"+filename)
+            payload=io.BytesIO(out.getvalue())
+    return StreamingResponse(payload,media_type="application/zip",
+        headers={"Content-Disposition":f'attachment; filename="nexvain-{landing_key(scope)}.zip"'})
+
+@app.get("/landing/{scope}/{path:path}")
+def preview_landing_package(scope:str,path:str):
+    root=(PACKAGES/landing_key(scope)).resolve()
+    target=(root/path).resolve()
+    if not target.is_relative_to(root) or not target.is_file():raise HTTPException(404,"Not found")
+    return FileResponse(target,headers={"Content-Security-Policy":"sandbox allow-scripts; default-src 'self' data: blob:; connect-src 'none'; object-src 'none'"})
+
 @app.get("/api/topics")
 def list_topics():
     with connection() as db:
@@ -819,15 +1000,38 @@ def publish():
                         local.parent.mkdir(parents=True,exist_ok=True)
                         shutil.copy2(managed,local)
 
+    # Landing page packages coexist with dcell packages.
+    for landing in ["home"]+[f"topic-{t['id']}" for t in topics]:
+        state=landing_state(landing)
+        if state["page"].get("mode")!="package":continue
+        source=PACKAGES/landing
+        if not (source/"index.html").is_file():raise HTTPException(409,"Missing landing page package: "+landing)
+        dest=staging/"custom"/landing
+        shutil.copytree(source,dest)
+        for page_file in dest.rglob("*.html"):
+            for match in re.findall(r"""(?:src|href)=["']media/([a-f0-9]{32}\\.(?:png|svg))""",page_file.read_text(encoding="utf-8")):
+                local=page_file.parent/"media"/match
+                managed=MEDIA/match
+                if not local.exists() and managed.is_file():
+                    local.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(managed,local)
+
     # Export only re-encoded managed assets, never upload originals or DB files.
     shutil.copytree(MEDIA, staging / "media")
     try:
         cards="".join(f'<a class="card" href="topic-{t["id"]}.html"><h2>{html.escape(t["name"])}</h2><p>{html.escape(t["description"])}</p></a>' for t in topics)
-        (staging/"index.html").write_text(render_document("专题库首页","农业专题数据资源展示",f'<div class="cards">{cards}</div>',nav_html,theme),encoding="utf-8")
+        homepage=landing_state("home")["page"]
+        if homepage.get("mode")=="package":
+            home_content='<iframe title="首页设计" src="custom/home/index.html" sandbox="allow-scripts" referrerpolicy="no-referrer" style="display:block;width:100%;height:800px;border:0"></iframe>'
+        else:
+            home_content=published_fragment(homepage) or f'<div class="cards">{cards}</div>'
+        (staging/"index.html").write_text(render_document("专题库首页","农业专题数据资源展示",home_content,nav_html,theme,safe_css(homepage.get("css",""))),encoding="utf-8")
         for t in topics:
             owned=[r for r in links if r["topic_id"]==t["id"] and r["dcell_id"] in by_id]
             cards="".join(f'<a class="card" href="dcell-{r["dcell_id"]}.html">{html.escape(r["alias"] or by_id[r["dcell_id"]]["name"])}</a>' for r in owned)
-            content=published_fragment(t["page"])+f'<div class="cards">{cards}</div>'
+            if t["page"].get("mode")=="package":
+                content='<iframe title="'+html.escape(t["name"],quote=True)+'" src="custom/topic-'+str(t["id"])+'/index.html" sandbox="allow-scripts" referrerpolicy="no-referrer" style="display:block;width:100%;height:800px;border:0"></iframe>'
+            else:
+                content=published_fragment(t["page"])+f'<div class="cards">{cards}</div>'
             (staging/f'topic-{t["id"]}.html').write_text(render_document(t["name"],t["description"],content,nav_html,theme,safe_css(t["page"].get("css",""))),encoding="utf-8")
         for d in dcells:
             if d.get("mode")=="package":
