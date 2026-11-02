@@ -25,6 +25,11 @@ textarea{min-height:90px}label{display:block;margin:15px 0 6px;color:var(--muted
 @keyframes celebrate-pop{from{transform:translate(-50%,-65%) scale(.65);opacity:0}to{transform:translate(-50%,-50%) scale(1);opacity:1}}
 @media(prefers-reduced-motion:reduce){.spark,.celebrate-message{animation:none}.celebrate-screen.active{display:block}}
 .history-row{border-bottom:1px solid var(--line);padding:10px 0;font-size:13px;overflow-wrap:anywhere}
+.rel-row{display:flex;align-items:center;gap:10px;border:1px solid #38536a;border-radius:8px;padding:8px;margin:6px 0;cursor:grab}.rel-row.dragging{opacity:.45}.rel-row label{flex:0 0 210px;margin:0}.rel-row input.rel-alias{flex:1;width:auto}
+.topic-item{cursor:grab}.topic-item.dragging{opacity:.5}
+.asset-tile{display:flex;flex-direction:column;gap:5px;width:138px;min-width:138px;background:#14293f;border:1px solid #355676;padding:7px;border-radius:9px;cursor:pointer;color:#fff}.asset-tile img{width:120px;height:85px;object-fit:contain}.asset-tile small{overflow:hidden;text-overflow:ellipsis}
+#asset-gallery{display:flex;overflow-x:auto;gap:9px;padding:9px;max-width:100%;min-height:32px}
+#source-live{width:100%;height:350px;background:#fff;border:1px solid #426785;border-radius:8px}
 #editor{height:540px;border:1px solid var(--line);background:white}
 .links label{margin:8px 0;display:flex;gap:10px;align-items:center}.links input{width:auto}
 .notice{padding:11px 14px;background:#263d52;border-radius:7px;color:#c9dded;margin-bottom:18px}
@@ -58,7 +63,7 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 <label>简介</label><textarea id="item-desc"></textarea>
 <div id="topic-position"><label>专题排序</label><input id="item-position" type="number" value="0"></div>
 <div id="dcell-mode" class="hidden"><label>页面来源</label><select id="item-mode" onchange="updateModeUI()"><option value="template">公共模板（推荐，开箱即用）</option><option value="editor">自由设计（GrapesJS）</option><option value="package">外部静态页面包 ZIP</option></select></div><div id="dcell-template" class="hidden"><label>页面模板</label><select id="item-template"><option value="overview">数据集概览</option><option value="metrics">指标看板</option><option value="gallery">图像图集</option><option value="research">科研成果</option><option value="standard">基础介绍</option><option value="metrics">指标展示</option><option value="gallery">图文展示</option><option value="custom">完全自定义</option></select></div>
-<div id="template-content" class="hidden"><div class="notice" style="margin-top:16px">填内容即可生成整页，无需设计 HTML。多条内容每行一条，用 | 分隔。</div><label>页面摘要</label><textarea id="tpl-summary" placeholder="数据来源、覆盖范围、应用价值"></textarea><label>指标卡（每行：指标名称 | 数值 | 备注）</label><textarea id="tpl-metrics" placeholder="图像数量 | 12480 | 张&#10;覆盖年份 | 2025 | 年"></textarea><label>统计图（每行：类别 | 数值）</label><textarea id="tpl-chart" placeholder="玉米 | 42&#10;水稻 | 63"></textarea><label>研究说明（每行：小节标题 | 内容）</label><textarea id="tpl-sections" placeholder="数据说明 | 介绍采集方法和应用价值"></textarea><label>图片（每行：已上传的 /media/图片地址 | 图注）</label><textarea id="tpl-images" placeholder="/media/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.png | 代表性图片"></textarea><div class="row" style="margin-top:12px"><input id="tpl-image-upload" type="file" accept="image/png,image/jpeg,image/webp" style="max-width:300px"><button type="button" class="secondary" onclick="uploadTemplateImage()">上传图片并加入列表</button></div><p class="muted">内置模板自动布局；修改公共模板后，所有使用它的 dcell 会在下次发布时统一更新。</p></div><div class="row" style="margin-top:20px"><button type="submit">保存基本信息</button><button id="template-preview-btn" type="button" class="secondary hidden" onclick="previewTemplate()">预览模板页面</button><button type="button" class="secondary" id="design-btn" onclick="openEditor()">设计页面</button></div></form>
+<div id="template-content" class="hidden"><div class="notice" style="margin-top:16px">填内容即可生成整页，无需设计 HTML。多条内容每行一条，用 | 分隔。</div><label>页面摘要</label><textarea id="tpl-summary" placeholder="数据来源、覆盖范围、应用价值"></textarea><label>指标卡（每行：指标名称 | 数值 | 备注）</label><textarea id="tpl-metrics" placeholder="图像数量 | 12480 | 张&#10;覆盖年份 | 2025 | 年"></textarea><label>统计图（每行：类别 | 数值）</label><textarea id="tpl-chart" placeholder="玉米 | 42&#10;水稻 | 63"></textarea><label>研究说明（每行：小节标题 | 内容）</label><textarea id="tpl-sections" placeholder="数据说明 | 介绍采集方法和应用价值"></textarea><label>图片（每行：已上传的 /media/图片地址 | 图注）</label><textarea id="tpl-images" placeholder="/media/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.png | 代表性图片"></textarea><div class="row" style="margin-top:12px"><input id="tpl-image-upload" type="file" accept="image/png,image/jpeg,image/webp" style="max-width:300px"><button type="button" class="secondary" onclick="uploadTemplateImage()">上传图片并加入列表</button></div><div class="card" style="margin-top:12px"><div class="row"><strong>素材库</strong><button type="button" class="secondary" onclick="loadAssets()">查看已上传图片</button></div><div id="asset-gallery"></div></div><p class="muted">内置模板自动布局；修改公共模板后，所有使用它的 dcell 会在下次发布时统一更新。</p></div><div class="row" style="margin-top:20px"><button type="submit">保存基本信息</button><button id="template-preview-btn" type="button" class="secondary hidden" onclick="previewTemplate()">预览模板页面</button><button type="button" class="secondary" id="design-btn" onclick="openEditor()">设计页面</button></div></form>
 <div id="package-area" class="hidden"><hr style="border-color:#304d65;margin:20px 0"><h3>挂载独立页面</h3><p class="muted">ZIP 根目录必须有 index.html，可包含 CSS、JS、图像和本地数据文件。请只上传自己可信任且完成脱敏的页面包。</p><input id="package-zip" type="file" accept=".zip"><div class="row" style="margin-top:12px"><button type="button" onclick="uploadPackage()">上传并挂载到 dcell</button><button type="button" class="secondary" onclick="previewPackage()">预览当前页面包</button></div><label>或者从服务器授权目录导入</label><input id="package-directory" placeholder="相对 NEXVAIN_IMPORT_ROOT 的目录，例如 corn-disease"><button style="margin-top:10px" type="button" class="secondary" onclick="importDirectory()">导入服务器目录</button></div><div id="relations-wrap" class="hidden"><hr style="border-color:#304d65;margin:20px 0"><h3 id="relations-title">关联 dcell</h3><div id="relations-content"></div></div>
 </dialog>
 <dialog id="source-dialog" class="dialog" style="width:min(1500px,98vw)">
@@ -71,7 +76,7 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 <div id="source-notice" class="notice hidden"></div>
 <div class="source-area"><div id="source-files" class="card"></div><div class="source-main">
 <div class="row" style="margin-bottom:8px"><strong id="source-current">请选择文件</strong><span id="source-dirty" class="muted"></span></div>
-<textarea id="source-code" spellcheck="false" oninput="sourceChanged()" onkeydown="sourceKeyboard(event)"></textarea>
+<textarea id="source-code" spellcheck="false" oninput="sourceChanged()" onkeydown="sourceKeyboard(event)"></textarea><h3>实时预览</h3><p class="muted">HTML / CSS / JS 改动可在下方临时预览；不会自动保存，Ctrl+S 才保存到页面包。</p><iframe id="source-live" sandbox="allow-scripts" title="源码即时预览"></iframe>
 </div></div>
 </dialog>
 <dialog id="editor-dialog" class="dialog" style="width:min(1450px,98vw)">
@@ -109,7 +114,8 @@ function message(s){
 }
 async function refresh(){
  [topics,dcells]=await Promise.all([api('/topics'),api('/dcells')]);
- document.getElementById('topics-list').innerHTML=topics.map(t=>'<div class="card"><div class="row"><h3>'+esc(t.name)+'</h3><button onclick="openRecord(\'topic\','+t.id+')">编辑首页 / 关联</button><button class="secondary" onclick="editDesign(\'topic\','+t.id+')">设计首页</button><button class="danger" onclick="removeRecord(\'topic\','+t.id+')">删除</button></div><p class="muted">'+esc(t.description)+'</p></div>').join('')||'<p class="muted">还没有专题。</p>';
+ document.getElementById('topics-list').innerHTML=topics.map(t=>'<div class="card topic-item" draggable="true" data-topic-id="'+t.id+'"><div class="row"><span title="拖拽排序">⠿</span><h3>'+esc(t.name)+'</h3><button onclick="openRecord(\'topic\','+t.id+')">编辑首页 / 关联</button><button class="secondary" onclick="editDesign(\'topic\','+t.id+')">设计首页</button><button class="danger" onclick="removeRecord(\'topic\','+t.id+')">删除</button></div><p class="muted">'+esc(t.description)+'</p></div>').join('')||'<p class="muted">还没有专题。</p>';
+ bindTopicDrag();
  document.getElementById('dcells-list').innerHTML=dcells.map(d=>'<div class="card"><div class="row"><h3>'+esc(d.name)+'</h3><button onclick="openRecord(\'dcell\','+d.id+')">编辑内容 / 查看关联</button>'+(d.mode==='editor'?'<button class="secondary" onclick="editDesign(\'dcell\','+d.id+')">设计页面</button>':d.mode==='template'?'<button class="secondary" onclick="window.open(\'/api/dcells/'+d.id+'/preview\',\'_blank\')">预览模板</button>':'')+'<button class="secondary" onclick="sourceWorkspace('+d.id+')">源码</button><button class="secondary" onclick="cloneDcell('+d.id+')">复制</button><button class="danger" onclick="removeRecord(\'dcell\','+d.id+')">删除</button></div><p class="muted">'+esc(d.description)+'</p></div>').join('')||'<p class="muted">还没有 dcell。</p>';
 }
 function showTab(tab){
@@ -157,8 +163,9 @@ async function loadTopicRelations(){
  document.getElementById('relations-title').textContent='此专题关联哪些 dcell';
  document.getElementById('relations-content').innerHTML='<div class="links">'+dcells.map(d=>{
  const r=chosen.get(d.id);
- return '<label><input type="checkbox" class="rel-checkbox" value="'+d.id+'" '+(r?'checked':'')+'> '+esc(d.name)+'</label><input class="rel-alias" data-id="'+d.id+'" placeholder="此专题下的导航别名（可选）" value="'+esc(r?.alias||'')+'">';
- }).join('')+'</div><button style="margin-top:15px" onclick="saveRelations()">保存关联</button>';
+ return '<div class="rel-row" draggable="true" data-dcell-id="'+d.id+'"><span title="拖动排序">⠿</span><label><input type="checkbox" class="rel-checkbox" value="'+d.id+'" '+(r?'checked':'')+'> '+esc(d.name)+'</label><input class="rel-alias" data-id="'+d.id+'" placeholder="导航别名（可选）" value="'+esc(r?.alias||'')+'"></div>';
+ }).join('')+'</div><button style="margin-top:15px" onclick="saveRelations()">保存关联及排序</button>';
+ bindRelationDrag();
 }
 async function saveRelations(){
  const selected=[...document.querySelectorAll('.rel-checkbox:checked')].map((node,i)=>{
@@ -171,6 +178,40 @@ async function loadDcellRelations(){
  const rows=await api('/dcells/'+current.id+'/topics');
  document.getElementById('relations-title').textContent='已被哪些专题引用';
  document.getElementById('relations-content').innerHTML=rows.map(x=>'<p>· '+esc(x.name)+(x.alias?'（'+esc(x.alias)+'）':'')+'</p>').join('')||'<p class="muted">尚未关联专题，请在专题管理中选择此 dcell。</p>';
+}
+
+
+function bindReorder(container, selector){
+ let dragging=null;
+ container.querySelectorAll(selector).forEach(item=>{
+  item.addEventListener('dragstart',e=>{if(e.target.closest('input')){e.preventDefault();return;}dragging=item;item.classList.add('dragging');e.dataTransfer.effectAllowed='move';});
+  item.addEventListener('dragover',e=>{if(!dragging||dragging===item)return;e.preventDefault();const rect=item.getBoundingClientRect();container.insertBefore(dragging,e.clientY<rect.top+rect.height/2?item:item.nextSibling);});
+  item.addEventListener('dragend',()=>{item.classList.remove('dragging');dragging=null;});
+ });
+}
+function bindRelationDrag(){const el=document.querySelector('#relations-content .links');if(el)bindReorder(el,'.rel-row');}
+function bindTopicDrag(){
+ const el=document.getElementById('topics-list');bindReorder(el,'.topic-item');
+ el.addEventListener('drop',async e=>{
+  e.preventDefault();
+  const order=[...el.querySelectorAll('.topic-item')].map(x=>Number(x.dataset.topicId));
+  try{for(let i=0;i<order.length;i++){
+   const t=topics.find(x=>x.id===order[i]);if(!t||t.position===i)continue;
+   await api('/topics/'+t.id,{method:'PUT',body:JSON.stringify({name:t.name,description:t.description,page:t.page,position:i})});
+  }await refresh();message('专题排序已保存，发布后生效');}catch(err){alert(err.message)}
+ });
+}
+async function loadAssets(){
+ try{
+  const assets=await api('/assets/library');
+  const gallery=document.getElementById('asset-gallery');
+  gallery.innerHTML=assets.length?assets.map(a=>'<button type="button" class="asset-tile" data-src="'+esc(a.url)+'"><img loading="lazy" src="'+esc(a.url)+'"><small>'+esc(a.name.slice(0,12))+'</small></button>').join(''):'<p class="muted">还没有已上传图片。</p>';
+  gallery.querySelectorAll('[data-src]').forEach(item=>item.onclick=()=>{
+   const input=document.getElementById('tpl-images');
+   input.value+=(input.value.trim()?'\n':'')+item.dataset.src+' | 图片说明';
+   message('已加入图片列表，保存后生效');
+  });
+ }catch(e){alert(e.message)}
 }
 
 function fillTemplateFields(content){
