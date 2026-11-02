@@ -33,6 +33,11 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 <body>
 <div id="celebrate-screen" class="celebrate-screen" aria-live="polite"></div>
 <dialog id="verify-dialog" class="dialog" style="width:min(480px,94vw)"><h2>管理员二次验证</h2><p id="verify-reason"></p><label>管理员密码</label><input id="verify-password" type="password" autocomplete="off"><div class="row" style="margin-top:20px"><button onclick="verifySubmit()">确认操作</button><button class="secondary" onclick="verifyCancel()">取消</button></div></dialog>
+<div id="verify-decoy" class="hidden" style="position:fixed;inset:0;background:#081a2c;z-index:99998;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px">
+<div style="width:54px;height:54px;border:5px solid #29435d;border-top-color:#38aee3;border-radius:50%;animation:decoy-spin 1.1s linear infinite"></div>
+<h2 style="font-size:clamp(24px,3vw,38px)">正在加载中（敬请期待）</h2>
+<button class="secondary" onclick="dismissDecoy()">返回</button></div>
+<style>@keyframes decoy-spin{to{transform:rotate(360deg)}}</style>
 <header><strong>NexVain <span class="muted">专题数据展示管理</span></strong>
 <div class="row"><span id="publish-state" class="muted">检查发布状态…</span><span id="status"></span><button class="secondary" onclick="window.open('/','_blank')">查看大屏</button><button onclick="publish()">发布静态站点</button></div></header>
 <div class="layout"><aside>
@@ -78,7 +83,7 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 <script>
 const api=async(path,opts={})=>{
  const res=await fetch('/api'+path,{...opts,headers:{'Content-Type':'application/json',...(opts.headers||{})}});
- if(!res.ok)throw new Error((await res.text()).slice(0,400));return res.json();
+ if(!res.ok){const err=new Error((await res.text()).slice(0,400));err.status=res.status;throw err;}return res.json();
 };
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let topics=[],dcells=[],kind='topic',current=null,editor=null;
@@ -145,7 +150,7 @@ async function saveRecord(event){
 async function removeRecord(k,id){
  if(!confirm('删除后关联关系也会清除，确定删除？系统会自动保留恢复点。'))return;
  const password=await verifyAdmin('删除内容');if(password===null)return;
- try{await api((k==='topic'?'/topics/':'/dcells/')+id,{method:'DELETE',headers:{'X-NexVain-Confirm':password}});await refresh();message('删除完成，已保留操作前恢复点')}catch(e){alert(e.message)}
+ try{await api((k==='topic'?'/topics/':'/dcells/')+id,{method:'DELETE',headers:{'X-NexVain-Confirm':password}});await refresh();message('删除完成，已保留操作前恢复点')}catch(e){criticalError(e)}
 }
 async function loadTopicRelations(){
  const rows=await api('/topics/'+current.id+'/dcells');const chosen=new Map(rows.map(r=>[r.id,r]));
@@ -298,7 +303,7 @@ async function saveTheme(){
 async function publish(){
  if(!confirm('确认发布当前静态站点？发布前会自动保存恢复点。'))return;
  const password=await verifyAdmin('正式发布静态站点');if(password===null)return;
- try{const r=await api('/publish',{method:'POST',headers:{'X-NexVain-Confirm':password}});message('发布成功：'+r.topics+' 专题 / '+r.dcells+' dcell');}catch(e){alert(e.message)}
+ try{const r=await api('/publish',{method:'POST',headers:{'X-NexVain-Confirm':password}});message('发布成功：'+r.topics+' 专题 / '+r.dcells+' dcell');}catch(e){criticalError(e)}
 }
 
 let sourceDcell=null,sourcePath='',sourceOriginal='';
@@ -399,6 +404,11 @@ async function sourceDetach(){
 }
 
 
+function dismissDecoy(){document.getElementById('verify-decoy').classList.add('hidden')}
+function criticalError(error){
+ if(error.status===403){document.getElementById('verify-decoy').classList.remove('hidden');return;}
+ alert(error.message);
+}
 let verifyResolve=null;
 function verifyAdmin(reason){
  return new Promise(resolve=>{
@@ -468,7 +478,7 @@ async function restoreCheckpoint(id){
  try{
   const r=await api('/history/restore/'+encodeURIComponent(id),{method:'POST',headers:{'X-NexVain-Confirm':password}});
   await refresh();await loadHistory();message('历史版本已恢复，救援点：'+r.rescue_checkpoint);
- }catch(e){alert(e.message)}
+ }catch(e){criticalError(e)}
 }
 
 async function init(){await refresh();const s=await api('/settings');document.getElementById('theme').value=s.theme;await updatePublishState()}
