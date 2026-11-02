@@ -366,13 +366,61 @@ async function publish(){
  }
 }
 
-let sourceDcell=null,sourcePath='',sourceOriginal='';
+let sourceDcell=null,sourcePath='',sourceOriginal='',sourceLanding=null;
+const sourceApiBase=()=>sourceLanding?'/pages/'+sourceLanding:'/dcells/'+sourceDcell.id;
+const sourcePreviewRoot=()=>sourceLanding?'/landing/'+sourceLanding+'/':'/package/'+sourceDcell.id+'/';
 function sourceChanged(){
  scheduleSourcePreview();
  document.getElementById('source-dirty').textContent=
  document.getElementById('source-code').value===sourceOriginal?'':'● 未保存';
 }
+
+async function landingWorkspace(scope){
+ const data=await api('/pages/'+scope);
+ sourceLanding=scope;
+ sourceDcell={id:scope,name:data.name,mode:data.page?.mode==='package'?'package':'editor'};
+ sourcePath='';sourceOriginal='';
+ document.getElementById('source-heading').textContent=data.name+' · 高级开发';
+ const notice=document.getElementById('source-notice');
+ notice.classList.toggle('hidden',sourceDcell.mode==='package');
+ notice.innerHTML=sourceDcell.mode==='package'?'':'现在可查看生成的 HTML，或转换成可自由修改的 HTML/CSS/JS 工程。转换后不再使用可视化编辑的数据，但专题导航仍保留。<div style="margin-top:10px"><button onclick="sourceDetach()">转成独立 HTML/CSS/JS</button></div>';
+ document.getElementById('landing-package-upload').classList.remove('hidden');
+ document.getElementById('source-files').innerHTML='';
+ document.getElementById('source-code').value='';
+ document.getElementById('source-code').readOnly=sourceDcell.mode!=='package';
+ document.getElementById('source-save-btn').disabled=sourceDcell.mode!=='package';
+ document.getElementById('source-current').textContent='载入源码…';
+ document.getElementById('source-dialog').showModal();
+ if(sourceDcell.mode==='package')await sourceRefresh();
+ else{
+  try{
+   const r=await api(sourceApiBase()+'/generated-source');
+   sourceOriginal=r.content;
+   document.getElementById('source-code').value=r.content;
+   document.getElementById('source-current').textContent='生成的 HTML（只读）';
+   document.getElementById('source-files').innerHTML='<strong>index.html（只读）</strong>';
+   sourceChanged();
+  }catch(e){alert(e.message)}
+ }
+}
+async function uploadLandingPackage(){
+ if(!sourceLanding)return;
+ const file=document.getElementById('landing-zip').files[0];
+ if(!file)return alert('请先选择包含 index.html 的 ZIP 工程');
+ if(!confirm('导入会替换当前首页的独立页面工程。系统保留操作前快照，是否继续？'))return;
+ const form=new FormData();form.append('file',file);
+ try{
+  const result=await fetch('/api/pages/'+sourceLanding+'/package',{method:'POST',body:form});
+  if(!result.ok)throw new Error(await result.text());
+  const key=sourceLanding;
+  document.getElementById('source-dialog').close();
+  await landingWorkspace(key);
+  message('完整 HTML/CSS/JS 工程已导入，请预览后发布');
+ }catch(e){alert(e.message)}
+}
+
 async function sourceWorkspace(id){
+ sourceLanding=null;
  const d=dcells.find(x=>x.id===id);
  if(!d)return;
  sourceDcell=d;sourcePath='';sourceOriginal='';
@@ -380,6 +428,7 @@ async function sourceWorkspace(id){
  const notice=document.getElementById('source-notice');
  notice.classList.toggle('hidden',d.mode==='package');
  notice.innerHTML=d.mode==='package'?'':'当前是 '+(d.mode==='template'?'公共模板':'可视化编辑')+'模式。可直接导出完整 ZIP，或点击下方按钮将该 dcell 转为可编辑的独立 HTML/CSS/JS。转换后不会再跟随公共模板更新。<div style="margin-top:10px"><button onclick="sourceDetach()">转为独立页面并编辑</button></div>';
+ document.getElementById('landing-package-upload').classList.toggle('hidden',!sourceLanding);
  document.getElementById('source-dialog').showModal();
  document.getElementById('source-files').innerHTML='';
  document.getElementById('source-code').value='';
@@ -409,12 +458,12 @@ async function sourceLivePreview(){
  const iframe=document.getElementById('source-live');
  const code=document.getElementById('source-code').value;
  const path=sourcePath;
- const prefix='/package/'+sourceDcell.id+'/';
+ const prefix=sourcePreviewRoot();
  if(sourceDcell.mode!=='package'){
   iframe.srcdoc=code;return;
  }
  try{
-  let html=path==='index.html'?code:(await api('/dcells/'+sourceDcell.id+'/source/file?path=index.html')).content;
+  let html=path==='index.html'?code:(await api(sourceApiBase()+'/source/file?path=index.html')).content;
   if(path.endsWith('.css')){
    // Modify preview in memory without changing the actual saved file.
    const css=code.replace(/<\//g,'<\\/');
@@ -430,7 +479,7 @@ async function sourceLivePreview(){
 async function sourceRefresh(){
  if(!sourceDcell)return;
  try{
-  const result=await api('/dcells/'+sourceDcell.id+'/source');
+  const result=await api(sourceApiBase()+'/source');
   const files=document.getElementById('source-files');
   files.innerHTML='<strong>页面文件</strong>'+result.files.map(f=>'<button class="secondary" '+(!f.editable?'disabled title="此文件无法作为文本编辑"':'')+' data-source="'+esc(f.path)+'">'+esc(f.path)+'</button>').join('');
   files.querySelectorAll('button[data-source]').forEach(b=>b.onclick=()=>sourceOpen(b.dataset.source));
@@ -441,7 +490,7 @@ async function sourceRefresh(){
 async function sourceOpen(path){
  if(document.getElementById('source-code').value!==sourceOriginal&&!confirm('当前文件尚未保存，要放弃修改吗？'))return;
  try{
-  const data=await api('/dcells/'+sourceDcell.id+'/source/file?path='+encodeURIComponent(path));
+  const data=await api(sourceApiBase()+'/source/file?path='+encodeURIComponent(path));
   sourcePath=path;sourceOriginal=data.content;
   document.getElementById('source-code').value=sourceOriginal;
   document.getElementById('source-code').readOnly=false;
@@ -452,7 +501,7 @@ async function sourceOpen(path){
 async function sourceSave(){
  if(!sourceDcell||sourceDcell.mode!=='package'||!sourcePath)return alert('请先转换为独立页面并选择源码文件');
  try{
-  await api('/dcells/'+sourceDcell.id+'/source/file?path='+encodeURIComponent(sourcePath),{
+  await api(sourceApiBase()+'/source/file?path='+encodeURIComponent(sourcePath),{
    method:'PUT',body:JSON.stringify({content:document.getElementById('source-code').value})
   });
   sourceOriginal=document.getElementById('source-code').value;sourceChanged();
@@ -475,20 +524,21 @@ function sourceKeyboard(event){
 }
 function sourcePreview(){
  if(!sourceDcell)return;
- const url=sourceDcell.mode==='package'?'/package/'+sourceDcell.id+'/index.html':'/api/dcells/'+sourceDcell.id+'/preview';
+ const url=sourceDcell.mode==='package'?sourcePreviewRoot()+'index.html':sourceLanding?(sourceLanding==='home'?'/':'/topic-'+sourceLanding.split('-')[1]+'.html'):'/api/dcells/'+sourceDcell.id+'/preview';
  window.open(url,'_blank');
 }
 function sourceExport(){
- if(sourceDcell)window.location.href='/api/dcells/'+sourceDcell.id+'/export';
+ if(sourceDcell)window.location.href=sourceLanding?'/api/pages/'+sourceLanding+'/export':'/api/dcells/'+sourceDcell.id+'/export';
 }
 async function sourceDetach(){
  if(!sourceDcell||!confirm('将当前 dcell 转成独立 HTML/CSS/JS？公共模板不受影响，但此 dcell 此后不再随模板更新。'))return;
  try{
-  await api('/dcells/'+sourceDcell.id+'/detach',{method:'POST'});
+  await api(sourceApiBase()+'/detach',{method:'POST'});
   const id=sourceDcell.id;
   await refresh();
   document.getElementById('source-dialog').close();
-  await sourceWorkspace(id);
+  if(sourceLanding)await landingWorkspace(sourceLanding);
+  else await sourceWorkspace(id);
   message('转换成功，已进入独立源码模式');
  }catch(e){alert(e.message)}
 }
