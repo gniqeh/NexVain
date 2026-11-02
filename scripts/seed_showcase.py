@@ -2,7 +2,7 @@
 """Create a non-destructive agricultural demo: 3 topics, 12 dcells, one landing page.
 
 Run from the NexVain project directory:
-    python scripts/seed_showcase.py
+    python -m scripts.seed_showcase
 Optional:
     python scripts/seed_showcase.py --dry-run
 
