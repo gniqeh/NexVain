@@ -48,7 +48,18 @@ async def protect_admin(request: Request, call_next):
                 return Response("Authentication required",401,headers={"WWW-Authenticate":'Basic realm="NexVain Admin"'})
         elif request.client is None or request.client.host not in ("127.0.0.1","::1","testclient"):
             return Response("Admin password required for remote access",403)
-    return await call_next(request)
+    response=await call_next(request)
+    # Browsers must revalidate published HTML after explicit republishing.
+    if request.url.path=="/" or request.url.path.endswith((".html","/admin")):
+        response.headers["Cache-Control"]="no-store"
+    # Record successful draft mutations, leaving publish as an explicit step.
+    if (request.method in ("POST","PUT","DELETE")
+        and request.url.path.startswith("/api/")
+        and request.url.path!="/api/publish"
+        and 200<=response.status_code<300):
+        with connection() as db:
+            db.execute("INSERT INTO settings(key,value) VALUES ('draft_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1")
+    return response
 
 
 @contextmanager
@@ -465,6 +476,17 @@ def render_document(title, intro, content, nav, theme, custom_css=""):
     <p class="intro">{html.escape(intro)}</p><section class="content">{content}</section>
     </main></div></body></html>"""
 
+@app.get("/api/publish/status")
+def publish_status():
+    with connection() as db:
+        draft=int((db.execute("SELECT value FROM settings WHERE key='draft_revision'").fetchone() or ["0"])[0])
+        published=int((db.execute("SELECT value FROM settings WHERE key='published_revision'").fetchone() or ["-1"])[0])
+        unlinked=db.execute("""SELECT COUNT(*) FROM dcells d WHERE NOT EXISTS
+            (SELECT 1 FROM topic_dcells td WHERE td.dcell_id=d.id)""").fetchone()[0]
+        return {"draft_revision":draft,"published_revision":published,
+                "needs_publish":draft!=published or not (PUBLIC/"index.html").exists(),
+                "unlinked_dcells":unlinked}
+
 @app.post("/api/publish")
 def publish():
     # Atomic swap is intentionally limited to a local temp directory; keep
@@ -474,6 +496,7 @@ def publish():
         dcells=[parse_row(r) for r in db.execute("SELECT * FROM dcells ORDER BY id")]
         links=[dict(r) for r in db.execute("SELECT * FROM topic_dcells ORDER BY position,dcell_id")]
         theme=db.execute("SELECT value FROM settings WHERE key='theme'").fetchone()[0]
+        draft_revision=int((db.execute("SELECT value FROM settings WHERE key='draft_revision'").fetchone() or ["0"])[0])
     by_id={x["id"]:x for x in dcells}
     nav=['<a href="index.html">专题库首页</a>']
     for topic in topics:
@@ -516,7 +539,9 @@ def publish():
         if old.exists(): shutil.rmtree(old)
     finally:
         if staging.exists(): shutil.rmtree(staging)
-    return {"ok":True,"topics":len(topics),"dcells":len(dcells),"url":"/"}
+    with connection() as db:
+        db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES ('published_revision',?)",(str(draft_revision),))
+    return {"ok":True,"topics":len(topics),"dcells":len(dcells),"url":"/","published_revision":draft_revision}
 
 @app.get("/admin")
 def admin():
