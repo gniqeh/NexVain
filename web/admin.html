@@ -344,7 +344,21 @@ async function saveTheme(){
 async function publish(){
  if(!confirm('确认发布当前静态站点？发布前会自动保存恢复点。'))return;
  const password=await verifyAdmin('正式发布静态站点');if(password===null)return;
- try{const r=await api('/publish',{method:'POST',headers:{'X-NexVain-Confirm':password}});message('发布成功：'+r.topics+' 专题 / '+r.dcells+' dcell');}catch(e){criticalError(e)}
+ try{
+  const r=await api('/publish',{method:'POST',headers:{'X-NexVain-Confirm':password}});
+  message('发布成功：'+r.topics+' 专题，'+r.dcells+' dcell，资源引用检查 '+(r.validation?.checked_references||0)+' 项');
+ }catch(e){
+  if(e.status===409){
+   try{
+    const report=JSON.parse(e.message).detail?.report;
+    if(report?.errors?.length){
+     alert('发布已取消，原站点保持不变。资源检查失败：\n'+report.errors.slice(0,8).map(x=>x.file+' → '+(x.reference||x.error)).join('\n'));
+     return;
+    }
+   }catch(_){}
+  }
+  criticalError(e);
+ }
 }
 
 let sourceDcell=null,sourcePath='',sourceOriginal='';
