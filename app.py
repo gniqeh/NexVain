@@ -44,7 +44,7 @@ async def protect_admin(request: Request, call_next):
     dev=development_mode()
     if dev and (request.client is None or request.client.host not in ("127.0.0.1","::1","testclient")):
         return Response("Local access only in development mode",403)
-    if not dev and (path == "/admin" or path.startswith(("/api/","/package/","/media/"))):
+    if not dev and (path == "/admin" or path.startswith(("/api/","/package/","/landing/","/media/"))):
         expected=os.environ.get("NEXVAIN_ADMIN_PASSWORD","")
         if expected:
             import base64
@@ -277,6 +277,14 @@ def install_landing_zip(raw:bytes,scope:str):
 @app.post("/api/pages/{scope}/package")
 async def upload_landing_package(scope:str,file:UploadFile=File(...)):
     return install_landing_zip(await file.read(50*1024*1024+1),scope)
+
+@app.get("/api/pages/{scope}/generated-source")
+def landing_generated_source(scope:str):
+    state=landing_state(scope)
+    if state["page"].get("mode")=="package":raise HTTPException(409,"Page is already an independent package")
+    html_body=published_fragment(state["page"]) or '<div class="panel"><h2>'+html.escape(state["name"])+'</h2><p>'+html.escape(state["description"])+'</p></div>'
+    page=render_document(state["name"],state["description"],html_body,'<a href="index.html">首页</a>',"blue",safe_css(state["page"].get("css","")))
+    return {"path":"index.html","content":page,"read_only":True}
 
 @app.get("/api/pages/{scope}/source")
 def landing_source_index(scope:str):
