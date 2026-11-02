@@ -349,6 +349,7 @@ async function publish(){
 
 let sourceDcell=null,sourcePath='',sourceOriginal='';
 function sourceChanged(){
+ scheduleSourcePreview();
  document.getElementById('source-dirty').textContent=
  document.getElementById('source-code').value===sourceOriginal?'':'● 未保存';
 }
@@ -374,10 +375,39 @@ async function sourceWorkspace(id){
    document.getElementById('source-code').value=r.content;
    document.getElementById('source-current').textContent='生成结果：index.html（只读）';
    document.getElementById('source-files').innerHTML='<strong>预览源码</strong><p class="muted">index.html（只读）</p>';
-   sourceChanged();
+   sourceChanged();scheduleSourcePreview();
   }catch(e){alert('生成源码失败：'+e.message)}
  }
 }
+
+let sourcePreviewTimeout=null;
+function scheduleSourcePreview(){
+ clearTimeout(sourcePreviewTimeout);
+ sourcePreviewTimeout=setTimeout(()=>sourceLivePreview(),350);
+}
+async function sourceLivePreview(){
+ if(!sourceDcell)return;
+ const iframe=document.getElementById('source-live');
+ const code=document.getElementById('source-code').value;
+ const path=sourcePath;
+ const prefix='/package/'+sourceDcell.id+'/';
+ if(sourceDcell.mode!=='package'){
+  iframe.srcdoc=code;return;
+ }
+ try{
+  let html=path==='index.html'?code:(await api('/dcells/'+sourceDcell.id+'/source/file?path=index.html')).content;
+  if(path.endsWith('.css')){
+   // Modify preview in memory without changing the actual saved file.
+   const css=code.replace(/<\//g,'<\\/');
+   html=html.replace('</head>','<style>'+css+'</style></head>');
+  }else if(path.endsWith('.js')){
+   html=html.replace('</body>','<script>'+code.replace(/<\/script/gi,'<\\/script')+'</script></body>');
+  }
+  if(!/<base\s/i.test(html))html=html.replace(/<head[^>]*>/i,x=>x+'<base href="'+prefix+'">');
+  iframe.srcdoc=html;
+ }catch(e){iframe.srcdoc='<p>预览生成失败，检查文件结构。</p>'}
+}
+
 async function sourceRefresh(){
  if(!sourceDcell)return;
  try{
@@ -407,7 +437,7 @@ async function sourceSave(){
    method:'PUT',body:JSON.stringify({content:document.getElementById('source-code').value})
   });
   sourceOriginal=document.getElementById('source-code').value;sourceChanged();
-  message('源码已保存。预览确认后发布即可更新大屏');
+  message('源码已保存。预览确认后发布即可更新大屏');scheduleSourcePreview();
  }catch(e){alert(e.message)}
 }
 function sourceCopy(){
