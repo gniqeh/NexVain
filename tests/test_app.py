@@ -88,3 +88,20 @@ def test_directory_import(monkeypatch,tmp_path):
     assert valid.status_code==200,valid.text
     assert client.post("/api/publish").status_code==200
     assert "服务器目录页面" in client.get(f"/custom/dcell-{d['id']}/index.html").text
+
+def test_nav_requires_relation_and_republish():
+    d=client.post("/api/dcells",json={"name":"导航更新回归用例"}).json()
+    t=client.post("/api/topics",json={"name":"导航测试专题"}).json()
+    status=client.get("/api/publish/status").json()
+    assert status["needs_publish"] is True
+    assert status["unlinked_dcells"]>=1
+    assert client.post("/api/publish").status_code==200
+    assert "导航更新回归用例" not in client.get("/").text
+    assert client.put(f"/api/topics/{t['id']}/dcells",json=[{"dcell_id":d["id"]}]).status_code==200
+    assert client.get("/api/publish/status").json()["needs_publish"] is True
+    assert client.post("/api/publish").status_code==200
+    page=client.get("/").text
+    assert "导航更新回归用例" in page
+    assert f'dcell-{d["id"]}.html' in page
+    assert client.get("/").headers["cache-control"]=="no-store"
+    assert client.get("/api/publish/status").json()["needs_publish"] is False
