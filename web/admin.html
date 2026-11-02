@@ -41,9 +41,9 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 <label>名称</label><input id="item-name" required maxlength="120">
 <label>简介</label><textarea id="item-desc"></textarea>
 <div id="topic-position"><label>专题排序</label><input id="item-position" type="number" value="0"></div>
-<div id="dcell-template" class="hidden"><label>dcell 起始模板</label><select id="item-template"><option value="standard">基础介绍</option><option value="metrics">指标展示</option><option value="gallery">图文展示</option><option value="custom">完全自定义</option></select></div>
+<div id="dcell-mode" class="hidden"><label>页面来源</label><select id="item-mode" onchange="updateModeUI()"><option value="editor">可视化编辑 / 预置模板</option><option value="package">外部静态页面包 ZIP</option></select></div><div id="dcell-template" class="hidden"><label>dcell 起始模板</label><select id="item-template"><option value="standard">基础介绍</option><option value="metrics">指标展示</option><option value="gallery">图文展示</option><option value="custom">完全自定义</option></select></div>
 <div class="row" style="margin-top:20px"><button type="submit">保存基本信息</button><button type="button" class="secondary" id="design-btn" onclick="openEditor()">设计页面</button></div></form>
-<div id="relations-wrap" class="hidden"><hr style="border-color:#304d65;margin:20px 0"><h3 id="relations-title">关联 dcell</h3><div id="relations-content"></div></div>
+<div id="package-area" class="hidden"><hr style="border-color:#304d65;margin:20px 0"><h3>挂载独立页面</h3><p class="muted">ZIP 根目录必须有 index.html，可包含 CSS、JS、图像和本地数据文件。请只上传自己可信任且完成脱敏的页面包。</p><input id="package-zip" type="file" accept=".zip"><div class="row" style="margin-top:12px"><button type="button" onclick="uploadPackage()">上传并挂载到 dcell</button><button type="button" class="secondary" onclick="previewPackage()">预览当前页面包</button></div></div><div id="relations-wrap" class="hidden"><hr style="border-color:#304d65;margin:20px 0"><h3 id="relations-title">关联 dcell</h3><div id="relations-content"></div></div>
 </dialog>
 <dialog id="editor-dialog" class="dialog" style="width:min(1450px,98vw)">
 <div class="dialog-head"><h2 id="editor-title">页面设计</h2><div class="row"><button onclick="saveDesign()">保存设计</button><button class="secondary" onclick="closeEditor()">关闭</button></div></div>
@@ -80,8 +80,10 @@ async function openRecord(k,id=null){
  document.getElementById('item-desc').value=current?.description||'';
  document.getElementById('item-position').value=current?.position||0;
  document.getElementById('item-template').value=current?.template||'standard';
+ document.getElementById('item-mode').value=current?.mode||'editor';
  document.getElementById('topic-position').classList.toggle('hidden',k!=='topic');
- document.getElementById('dcell-template').classList.toggle('hidden',k!=='dcell');
+ document.getElementById('dcell-mode').classList.toggle('hidden',k!=='dcell');
+ updateModeUI();
  document.getElementById('design-btn').disabled=!current;
  document.getElementById('relations-wrap').classList.toggle('hidden',!current);
  if(current){if(k==='topic')await loadTopicRelations();else await loadDcellRelations()}
@@ -94,7 +96,7 @@ async function saveRecord(event){
  description:document.getElementById('item-desc').value,
  page:current?.page||{}};
  if(isTopic)payload.position=Number(document.getElementById('item-position').value);
- else payload.template=document.getElementById('item-template').value;
+ else {payload.template=document.getElementById('item-template').value;payload.mode=document.getElementById('item-mode').value;}
  const path=isTopic?'/topics':'/dcells';
  try{
  const result=await api(path+(current?'/'+current.id:''),{method:current?'PUT':'POST',body:JSON.stringify(payload)});
@@ -124,6 +126,28 @@ async function loadDcellRelations(){
  const rows=await api('/dcells/'+current.id+'/topics');
  document.getElementById('relations-title').textContent='已被哪些专题引用';
  document.getElementById('relations-content').innerHTML=rows.map(x=>'<p>· '+esc(x.name)+(x.alias?'（'+esc(x.alias)+'）':'')+'</p>').join('')||'<p class="muted">尚未关联专题，请在专题管理中选择此 dcell。</p>';
+}
+function updateModeUI(){
+ const isDcell=kind==='dcell',packageMode=isDcell&&document.getElementById('item-mode').value==='package';
+ document.getElementById('dcell-template').classList.toggle('hidden',!isDcell||packageMode);
+ document.getElementById('package-area').classList.toggle('hidden',!packageMode||!current);
+ document.getElementById('design-btn').classList.toggle('hidden',packageMode);
+}
+async function uploadPackage(){
+ if(!current)return alert('请先保存 dcell 基本信息');
+ const file=document.getElementById('package-zip').files[0];
+ if(!file)return alert('先选择 ZIP');
+ const form=new FormData();form.append('file',file);
+ try{
+  const response=await fetch('/api/dcells/'+current.id+'/package',{method:'POST',body:form});
+  if(!response.ok)throw new Error(await response.text());
+  await refresh();const id=current.id;await openRecord('dcell',id);
+  message('页面包已挂载。点击发布后更新大屏');
+ }catch(e){alert(e.message)}
+}
+function previewPackage(){
+ if(!current)return;
+ window.open('/package/'+current.id+'/index.html','_blank');
 }
 function editDesign(k,id){const obj=(k==='topic'?topics:dcells).find(x=>x.id===id);kind=k;current=obj;openEditor()}
 function openEditor(){
@@ -161,7 +185,7 @@ async function saveDesign(){
  const page={html:editor?editor.getHtml():document.getElementById('fallback-html').value,css:editor?editor.getCss():''};
  const payload={name:current.name,description:current.description,page};
  if(kind==='topic')payload.position=current.position;
- else payload.template=current.template;
+ else {payload.template=current.template;payload.mode=current.mode||'editor';}
  try{
  await api((kind==='topic'?'/topics/':'/dcells/')+current.id,{method:'PUT',body:JSON.stringify(payload)});
  await refresh();closeEditor();message('页面设计已保存，点击发布后展示生效');
