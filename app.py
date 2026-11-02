@@ -411,7 +411,7 @@ def standalone_html(d,theme):
 
 def standalone_assets(root:Path,page_html:str):
     # Package only locally-managed media explicitly referenced in generated HTML.
-    for match in set(re.findall(r'(?:["\\'])/?media/([a-f0-9]{32}\.(?:png|svg))',page_html)):
+    for match in set(re.findall(r"media/([a-f0-9]{32}\\.(?:png|svg))", page_html)):
         source=MEDIA/match
         if source.is_file():
             (root/"media").mkdir(exist_ok=True)
@@ -501,7 +501,7 @@ def export_dcell(ident:int):
         with io.BytesIO() as mem:
             with zipfile.ZipFile(mem,"w",zipfile.ZIP_DEFLATED) as z:
                 z.writestr("index.html",page)
-                for filename in set(re.findall(r'(?:["\\'])/?media/([a-f0-9]{32}\.(?:png|svg))',page)):
+                for filename in set(re.findall(r"media/([a-f0-9]{32}\\.(?:png|svg))", page)):
                     asset=MEDIA/filename
                     if asset.is_file():z.write(asset,"media/"+filename)
             mem.seek(0)
