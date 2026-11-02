@@ -398,7 +398,7 @@ def create_chart(chart: ChartIn):
 
 @app.get("/media/{filename}")
 def media(filename: str):
-    if not re.fullmatch(r"[a-f0-9]{32}\\.(png|svg)",filename):
+    if not re.fullmatch(r"[a-f0-9]{32}\.(png|svg)",filename):
         raise HTTPException(404,"Not found")
     path=MEDIA/filename
     if not path.is_file(): raise HTTPException(404,"Not found")
@@ -435,8 +435,8 @@ def published_fragment(page):
     """Reference the exported local media, not the admin-only /media endpoint."""
     value = fragment(page)
     return re.sub(
-        r'(?<=src=")/media/([a-f0-9]{32}\\.(?:png|svg))(?=")',
-        r'media/\\1',
+        r'(?<=src=")/media/([a-f0-9]{32}\.(?:png|svg))(?=")',
+        r'media/\1',
         value
     )
 
