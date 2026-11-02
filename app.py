@@ -810,7 +810,7 @@ def publish():
             # was absent due to the old managed-asset filename regex.
             for page_file in destination.rglob("*.html"):
                 page_html=page_file.read_text(encoding="utf-8")
-                for match in re.findall(r'(?:(?:src|href)=["\\\'])media/([a-f0-9]{32}\\.(?:png|svg))',page_html):
+                for match in re.findall(r"""(?:src|href)=["']media/([a-f0-9]{32}\.(?:png|svg))""",page_html):
                     local=page_file.parent/"media"/match
                     managed=MEDIA/match
                     if not local.exists() and managed.is_file():
