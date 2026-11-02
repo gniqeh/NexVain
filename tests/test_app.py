@@ -266,12 +266,16 @@ def test_publish_checker_catches_missing_assets(tmp_path):
     (root/"missing.png").write_bytes(b"image")
     assert check(root)["ok"] is True
 
-def test_dashboard_fullscreen_controls_and_large_screen_css():
+def test_dashboard_canvas_fits_viewport_without_scrollbars():
     from app import render_document
     html=render_document("大屏","介绍","<p>正文</p>",'<a href="index.html">主页</a>',"blue")
     assert "nv-full" not in html and "nv-play" not in html
     assert "width:1920px;height:1080px" in html
     assert "width:1620px;height:1080px" in html
+    assert "overflow:hidden" in html
+    assert "window.innerWidth/1920" in html and "window.innerHeight/1080" in html
+    assert 'class="stage-inner"' in html
+
 
 def test_unresolved_asset_blocks_publish_and_preserves_previous_site():
     from app import PUBLIC
