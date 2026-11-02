@@ -269,8 +269,9 @@ def test_publish_checker_catches_missing_assets(tmp_path):
 def test_dashboard_fullscreen_controls_and_large_screen_css():
     from app import render_document
     html=render_document("大屏","介绍","<p>正文</p>",'<a href="index.html">主页</a>',"blue")
-    assert "nv-full" in html and "nv-play" in html
-    assert "min-width:1920px" in html
+    assert "nv-full" not in html and "nv-play" not in html
+    assert "width:1920px;height:1080px" in html
+    assert "width:1620px;height:1080px" in html
 
 def test_unresolved_asset_blocks_publish_and_preserves_previous_site():
     from app import PUBLIC
