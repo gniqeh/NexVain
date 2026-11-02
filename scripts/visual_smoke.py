@@ -60,14 +60,14 @@ with tempfile.TemporaryDirectory(prefix="nexvain-visual-") as temp:
                 assert page.locator("#nv-full").count()==0,filename
                 assert page.locator("#nv-play").count()==0,filename
                 canvas=page.locator(".shell").bounding_box()
-                assert round(canvas["width"])==1920 and round(canvas["height"])==1080,canvas
+                assert round(canvas["width"])==page.viewport_size["width"] and round(canvas["height"])==page.viewport_size["height"],canvas
                 dimensions=page.evaluate("""() => ({
                    scrollWidth:document.documentElement.scrollWidth,
                    viewportWidth:window.innerWidth,
                    scrollHeight:document.documentElement.scrollHeight,
                    viewportHeight:window.innerHeight
                 })""")
-                assert dimensions["scrollWidth"]<=1920, f"{filename}: horizontal overflow: {dimensions}"
+                assert dimensions["scrollWidth"]<=1920 and dimensions["scrollHeight"]<=1080, f"{filename}: viewport overflow: {dimensions}"
                 screenshot=out/(filename.replace(".html","")+".png")
                 page.screenshot(path=str(screenshot),full_page=True)
                 print(filename,dimensions,"screenshot:",screenshot)
@@ -78,7 +78,9 @@ with tempfile.TemporaryDirectory(prefix="nexvain-visual-") as temp:
             page.set_viewport_size({"width":1366,"height":768})
             page.reload(wait_until="networkidle")
             canvas=page.locator(".shell").bounding_box()
-            assert round(canvas["width"])==1920 and round(canvas["height"])==1080,canvas
+            assert round(canvas["width"])==page.viewport_size["width"] and round(canvas["height"])==page.viewport_size["height"],canvas
+            assert page.evaluate("document.documentElement.scrollWidth<=innerWidth && document.documentElement.scrollHeight<=innerHeight")
+            page.screenshot(path=str(out/"dcell-1366.png"))
             browser.close()
         print("1920x1080 browser smoke check passed")
     finally:
