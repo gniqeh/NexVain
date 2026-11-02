@@ -42,3 +42,34 @@ def test_image_upload_removes_exif():
     assert r.status_code==200
     assert r.json()["url"].endswith(".png")
     assert client.get(r.json()["url"]).status_code==200
+
+def test_custom_package_publish_and_traversal_rejection():
+    import io, zipfile
+    d=client.post("/api/dcells",json={"name":"外部设计","mode":"package"}).json()
+    archive=io.BytesIO()
+    with zipfile.ZipFile(archive,"w") as z:
+        z.writestr("index.html","<html><body><h1>自制页面</h1><script src='js/app.js'></script></body></html>")
+        z.writestr("js/app.js","document.body.dataset.ok='1'")
+    result=client.post(f"/api/dcells/{d['id']}/package",files={"file":("site.zip",archive.getvalue(),"application/zip")})
+    assert result.status_code==200,result.text
+    assert client.get(f"/package/{d['id']}/index.html").status_code==200
+    assert client.post("/api/publish").status_code==200
+    outer=client.get(f"/dcell-{d['id']}.html").text
+    assert 'sandbox="allow-scripts"' in outer
+    assert f"custom/dcell-{d['id']}/index.html" in outer
+    assert "自制页面" in client.get(f"/custom/dcell-{d['id']}/index.html").text
+    malicious=io.BytesIO()
+    with zipfile.ZipFile(malicious,"w") as z:
+        z.writestr("index.html","hello")
+        z.writestr("../escape.js","bad")
+    bad=client.post(f"/api/dcells/{d['id']}/package",files={"file":("bad.zip",malicious.getvalue(),"application/zip")})
+    assert bad.status_code==400
+
+
+def test_password_protection(monkeypatch):
+    import base64
+    monkeypatch.setenv("NEXVAIN_ADMIN_PASSWORD","secret-test")
+    assert client.get("/api/topics").status_code==401
+    hdr={"Authorization":"Basic "+base64.b64encode(b"admin:secret-test").decode()}
+    assert client.get("/api/topics",headers=hdr).status_code==200
+    monkeypatch.delenv("NEXVAIN_ADMIN_PASSWORD")
