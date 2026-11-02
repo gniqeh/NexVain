@@ -160,8 +160,9 @@ async function removeRecord(k,id){
 }
 async function loadTopicRelations(){
  const rows=await api('/topics/'+current.id+'/dcells');const chosen=new Map(rows.map(r=>[r.id,r]));
- document.getElementById('relations-title').textContent='此专题关联哪些 dcell';
- document.getElementById('relations-content').innerHTML='<div class="links">'+dcells.map(d=>{
+ document.getElementById('relations-title').textContent='此专题关联哪些 dcell（拖动调整顺序）';
+ const ordered=[...dcells].sort((a,b)=>{const x=chosen.get(a.id),y=chosen.get(b.id);return x&&y?x.position-y.position:x?-1:y?1:a.id-b.id});
+ document.getElementById('relations-content').innerHTML='<div class="links">'+ordered.map(d=>{
  const r=chosen.get(d.id);
  return '<div class="rel-row" draggable="true" data-dcell-id="'+d.id+'"><span title="拖动排序">⠿</span><label><input type="checkbox" class="rel-checkbox" value="'+d.id+'" '+(r?'checked':'')+'> '+esc(d.name)+'</label><input class="rel-alias" data-id="'+d.id+'" placeholder="导航别名（可选）" value="'+esc(r?.alias||'')+'"></div>';
  }).join('')+'</div><button style="margin-top:15px" onclick="saveRelations()">保存关联及排序</button>';
