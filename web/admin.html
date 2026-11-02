@@ -41,8 +41,8 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 <label>名称</label><input id="item-name" required maxlength="120">
 <label>简介</label><textarea id="item-desc"></textarea>
 <div id="topic-position"><label>专题排序</label><input id="item-position" type="number" value="0"></div>
-<div id="dcell-mode" class="hidden"><label>页面来源</label><select id="item-mode" onchange="updateModeUI()"><option value="editor">可视化编辑 / 预置模板</option><option value="package">外部静态页面包 ZIP</option></select></div><div id="dcell-template" class="hidden"><label>dcell 起始模板</label><select id="item-template"><option value="standard">基础介绍</option><option value="metrics">指标展示</option><option value="gallery">图文展示</option><option value="custom">完全自定义</option></select></div>
-<div class="row" style="margin-top:20px"><button type="submit">保存基本信息</button><button type="button" class="secondary" id="design-btn" onclick="openEditor()">设计页面</button></div></form>
+<div id="dcell-mode" class="hidden"><label>页面来源</label><select id="item-mode" onchange="updateModeUI()"><option value="template">公共模板（推荐，开箱即用）</option><option value="editor">自由设计（GrapesJS）</option><option value="package">外部静态页面包 ZIP</option></select></div><div id="dcell-template" class="hidden"><label>页面模板</label><select id="item-template"><option value="overview">数据集概览</option><option value="metrics">指标看板</option><option value="gallery">图像图集</option><option value="research">科研成果</option><option value="standard">基础介绍</option><option value="metrics">指标展示</option><option value="gallery">图文展示</option><option value="custom">完全自定义</option></select></div>
+<div id="template-content" class="hidden"><div class="notice" style="margin-top:16px">填内容即可生成整页，无需设计 HTML。多条内容每行一条，用 | 分隔。</div><label>页面摘要</label><textarea id="tpl-summary" placeholder="数据来源、覆盖范围、应用价值"></textarea><label>指标卡（每行：指标名称 | 数值 | 备注）</label><textarea id="tpl-metrics" placeholder="图像数量 | 12480 | 张&#10;覆盖年份 | 2025 | 年"></textarea><label>统计图（每行：类别 | 数值）</label><textarea id="tpl-chart" placeholder="玉米 | 42&#10;水稻 | 63"></textarea><label>研究说明（每行：小节标题 | 内容）</label><textarea id="tpl-sections" placeholder="数据说明 | 介绍采集方法和应用价值"></textarea><label>图片（每行：已上传的 /media/图片地址 | 图注）</label><textarea id="tpl-images" placeholder="/media/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.png | 代表性图片"></textarea><div class="row" style="margin-top:12px"><input id="tpl-image-upload" type="file" accept="image/png,image/jpeg,image/webp" style="max-width:300px"><button type="button" class="secondary" onclick="uploadTemplateImage()">上传图片并加入列表</button></div><p class="muted">内置模板自动布局；修改公共模板后，所有使用它的 dcell 会在下次发布时统一更新。</p></div><div class="row" style="margin-top:20px"><button type="submit">保存基本信息</button><button id="template-preview-btn" type="button" class="secondary hidden" onclick="previewTemplate()">预览模板页面</button><button type="button" class="secondary" id="design-btn" onclick="openEditor()">设计页面</button></div></form>
 <div id="package-area" class="hidden"><hr style="border-color:#304d65;margin:20px 0"><h3>挂载独立页面</h3><p class="muted">ZIP 根目录必须有 index.html，可包含 CSS、JS、图像和本地数据文件。请只上传自己可信任且完成脱敏的页面包。</p><input id="package-zip" type="file" accept=".zip"><div class="row" style="margin-top:12px"><button type="button" onclick="uploadPackage()">上传并挂载到 dcell</button><button type="button" class="secondary" onclick="previewPackage()">预览当前页面包</button></div><label>或者从服务器授权目录导入</label><input id="package-directory" placeholder="相对 NEXVAIN_IMPORT_ROOT 的目录，例如 corn-disease"><button style="margin-top:10px" type="button" class="secondary" onclick="importDirectory()">导入服务器目录</button></div><div id="relations-wrap" class="hidden"><hr style="border-color:#304d65;margin:20px 0"><h3 id="relations-title">关联 dcell</h3><div id="relations-content"></div></div>
 </dialog>
 <dialog id="editor-dialog" class="dialog" style="width:min(1450px,98vw)">
@@ -58,6 +58,13 @@ const api=async(path,opts={})=>{
 };
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let topics=[],dcells=[],kind='topic',current=null,editor=null;
+const defaultTemplateContent={
+ summary:'数据集覆盖黑龙江寒地农业生产典型场景，可用于专题成果与数据资源展示。',
+ metrics:[{label:'记录数量',value:'12,480',note:'演示数据'},{label:'覆盖区域',value:'黑龙江',note:'示例'},{label:'采集年份',value:'2025',note:'示例'}],
+ chart:[{label:'玉米',value:42},{label:'水稻',value:63},{label:'大豆',value:51}],
+ images:[],
+ sections:[{title:'数据说明',text:'请修改为实际数据集的采集信息与应用价值。'}]
+};
 const seed={
  standard:'<section class="panel"><h2>数据集概况</h2><p>请填写数据集介绍。</p></section>',
  metrics:'<section class="panel"><h2>核心指标</h2><div class="cards"><div class="card"><h3>数据规模</h3><p>待填写</p></div><div class="card"><h3>覆盖区域</h3><p>待填写</p></div></div></section>',
@@ -69,7 +76,7 @@ function message(s){document.getElementById('status').textContent=s;setTimeout((
 async function refresh(){
  [topics,dcells]=await Promise.all([api('/topics'),api('/dcells')]);
  document.getElementById('topics-list').innerHTML=topics.map(t=>'<div class="card"><div class="row"><h3>'+esc(t.name)+'</h3><button onclick="openRecord(\'topic\','+t.id+')">编辑首页 / 关联</button><button class="secondary" onclick="editDesign(\'topic\','+t.id+')">设计首页</button><button class="danger" onclick="removeRecord(\'topic\','+t.id+')">删除</button></div><p class="muted">'+esc(t.description)+'</p></div>').join('')||'<p class="muted">还没有专题。</p>';
- document.getElementById('dcells-list').innerHTML=dcells.map(d=>'<div class="card"><div class="row"><h3>'+esc(d.name)+'</h3><button onclick="openRecord(\'dcell\','+d.id+')">编辑 / 关联专题</button><button class="secondary" onclick="editDesign(\'dcell\','+d.id+')">设计页面</button><button class="danger" onclick="removeRecord(\'dcell\','+d.id+')">删除</button></div><p class="muted">'+esc(d.description)+'</p></div>').join('')||'<p class="muted">还没有 dcell。</p>';
+ document.getElementById('dcells-list').innerHTML=dcells.map(d=>'<div class="card"><div class="row"><h3>'+esc(d.name)+'</h3><button onclick="openRecord(\'dcell\','+d.id+')">编辑 / 关联专题</button><button class="secondary" onclick="editDesign(\'dcell\','+d.id+')">设计页面</button><button class="secondary" onclick="cloneDcell('+d.id+')">复制</button><button class="danger" onclick="removeRecord(\'dcell\','+d.id+')">删除</button></div><p class="muted">'+esc(d.description)+'</p></div>').join('')||'<p class="muted">还没有 dcell。</p>';
 }
 function showTab(tab){
  for(const x of ['topics','dcells','appearance']){document.getElementById(x+'-section').classList.toggle('hidden',x!==tab);document.getElementById('nav-'+x).classList.toggle('selected',x===tab)}
@@ -80,8 +87,9 @@ async function openRecord(k,id=null){
  document.getElementById('item-name').value=current?.name||'';
  document.getElementById('item-desc').value=current?.description||'';
  document.getElementById('item-position').value=current?.position||0;
- document.getElementById('item-template').value=current?.template||'standard';
- document.getElementById('item-mode').value=current?.mode||'editor';
+ document.getElementById('item-template').value=current?.template||(k==='dcell'?'overview':'standard');
+ document.getElementById('item-mode').value=current?.mode||(k==='dcell'?'template':'editor');
+ fillTemplateFields(current?.content&&Object.keys(current.content).length?current.content:defaultTemplateContent);
  document.getElementById('topic-position').classList.toggle('hidden',k!=='topic');
  document.getElementById('dcell-mode').classList.toggle('hidden',k!=='dcell');
  updateModeUI();
@@ -97,7 +105,7 @@ async function saveRecord(event){
  description:document.getElementById('item-desc').value,
  page:current?.page||{}};
  if(isTopic)payload.position=Number(document.getElementById('item-position').value);
- else {payload.template=document.getElementById('item-template').value;payload.mode=document.getElementById('item-mode').value;}
+ else {payload.template=document.getElementById('item-template').value;payload.mode=document.getElementById('item-mode').value;payload.content=readTemplateFields();}
  const path=isTopic?'/topics':'/dcells';
  try{
  const result=await api(path+(current?'/'+current.id:''),{method:current?'PUT':'POST',body:JSON.stringify(payload)});
@@ -128,11 +136,62 @@ async function loadDcellRelations(){
  document.getElementById('relations-title').textContent='已被哪些专题引用';
  document.getElementById('relations-content').innerHTML=rows.map(x=>'<p>· '+esc(x.name)+(x.alias?'（'+esc(x.alias)+'）':'')+'</p>').join('')||'<p class="muted">尚未关联专题，请在专题管理中选择此 dcell。</p>';
 }
+
+function fillTemplateFields(content){
+ const c=content||defaultTemplateContent;
+ document.getElementById('tpl-summary').value=c.summary||'';
+ document.getElementById('tpl-metrics').value=(c.metrics||[]).map(x=>[x.label,x.value,x.note||''].join(' | ')).join('\n');
+ document.getElementById('tpl-chart').value=(c.chart||[]).map(x=>[x.label,x.value].join(' | ')).join('\n');
+ document.getElementById('tpl-sections').value=(c.sections||[]).map(x=>[x.title,x.text].join(' | ')).join('\n');
+ document.getElementById('tpl-images').value=(c.images||[]).map(x=>[x.src,x.caption||''].join(' | ')).join('\n');
+}
+function templateLines(id,keys){
+ return document.getElementById(id).value.split(/\r?\n/).filter(x=>x.trim()).slice(0,18).map(line=>{
+  const parts=line.split('|').map(x=>x.trim());
+  const obj={};keys.forEach((k,i)=>obj[k]=parts[i]||'');
+  return obj;
+ });
+}
+function readTemplateFields(){
+ return {
+  summary:document.getElementById('tpl-summary').value,
+  metrics:templateLines('tpl-metrics',['label','value','note']),
+  chart:templateLines('tpl-chart',['label','value']).filter(x=>x.label&&x.value!==''&&Number.isFinite(Number(x.value))).map(x=>({...x,value:Number(x.value)})),
+  sections:templateLines('tpl-sections',['title','text']),
+  images:templateLines('tpl-images',['src','caption'])
+ };
+}
+async function uploadTemplateImage(){
+ const file=document.getElementById('tpl-image-upload').files[0];
+ if(!file)return alert('请选择图片');
+ const body=new FormData();body.append('file',file);
+ try{
+  const r=await fetch('/api/assets',{method:'POST',body});
+  if(!r.ok)throw Error(await r.text());
+  const output=await r.json();
+  const el=document.getElementById('tpl-images');
+  el.value+=(el.value.trim()?'\n':'')+output.url+' | '+file.name;
+  message('图片已加入内容列表，保存后预览');
+ }catch(e){alert(e.message)}
+}
+function previewTemplate(){
+ if(!current)return alert('请先保存 dcell');
+ window.open('/api/dcells/'+current.id+'/preview','_blank');
+}
+async function cloneDcell(id){
+ try{
+  const d=await api('/dcells/'+id+'/clone',{method:'POST'});
+  await refresh();showTab('dcells');await openRecord('dcell',d.id);
+  message('已复制 dcell，修改内容后保存即可');
+ }catch(e){alert(e.message)}
+}
 function updateModeUI(){
- const isDcell=kind==='dcell',packageMode=isDcell&&document.getElementById('item-mode').value==='package';
+ const isDcell=kind==='dcell',packageMode=isDcell&&document.getElementById('item-mode').value==='package',templateMode=isDcell&&document.getElementById('item-mode').value==='template';
  document.getElementById('dcell-template').classList.toggle('hidden',!isDcell||packageMode);
+ document.getElementById('template-content').classList.toggle('hidden',!templateMode);
+ document.getElementById('template-preview-btn').classList.toggle('hidden',!templateMode||!current);
  document.getElementById('package-area').classList.toggle('hidden',!packageMode||!current);
- document.getElementById('design-btn').classList.toggle('hidden',packageMode);
+ document.getElementById('design-btn').classList.toggle('hidden',packageMode||templateMode);
 }
 async function uploadPackage(){
  if(!current)return alert('请先保存 dcell 基本信息');
@@ -196,7 +255,7 @@ async function saveDesign(){
  const page={html:editor?editor.getHtml():document.getElementById('fallback-html').value,css:editor?editor.getCss():''};
  const payload={name:current.name,description:current.description,page};
  if(kind==='topic')payload.position=current.position;
- else {payload.template=current.template;payload.mode=current.mode||'editor';}
+ else {payload.template=current.template;payload.mode=current.mode||'editor';payload.content=current.content||{};}
  try{
  await api((kind==='topic'?'/topics/':'/dcells/')+current.id,{method:'PUT',body:JSON.stringify(payload)});
  await refresh();closeEditor();message('页面设计已保存，点击发布后展示生效');
