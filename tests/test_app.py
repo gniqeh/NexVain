@@ -16,3 +16,29 @@ def test_topic_dcell_publish():
     html = client.get(f"/dcell-{d['id']}.html").text
     assert "成果概况" in html
     assert "<script>" not in html
+
+def test_chart_creation_and_static_export():
+    topic = client.post("/api/topics", json={"name":"示范专题"}).json()
+    chart = client.post("/api/charts", json={
+        "title":"结构统计", "kind":"bar", "labels":["玉米","水稻"],"values":[10,20]
+    })
+    assert chart.status_code == 200
+    url=chart.json()["url"]
+    assert client.get(url).status_code==200
+    dcell=client.post("/api/dcells", json={"name":"示范数据集",
+        "page":{"html":'<div><img src="'+url+'" alt="统计图"></div>'}}).json()
+    assert client.put(f"/api/topics/{topic['id']}/dcells",json=[{"dcell_id":dcell["id"]}]).status_code==200
+    assert client.post("/api/publish").status_code==200
+    assert url in client.get(f"/dcell-{dcell['id']}.html").text
+    assert client.get(url).status_code==200
+
+def test_image_upload_removes_exif():
+    import io
+    from PIL import Image
+    image=Image.new("RGB",(10,10),(150,120,80))
+    buff=io.BytesIO()
+    image.save(buff,format="JPEG")
+    r=client.post("/api/assets",files={"file":("input.jpg",buff.getvalue(),"image/jpeg")})
+    assert r.status_code==200
+    assert r.json()["url"].endswith(".png")
+    assert client.get(r.json()["url"]).status_code==200
