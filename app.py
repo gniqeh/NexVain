@@ -7,12 +7,14 @@ import shutil
 import io
 import uuid
 import math
+import zipfile
+import hmac
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -22,10 +24,32 @@ DB = DATA / "nexvain.sqlite3"
 PUBLIC = ROOT / "published"
 ASSETS = ROOT / "web"
 MEDIA = DATA / "media"
+PACKAGES = DATA / "packages"
+PACKAGES.mkdir(parents=True,exist_ok=True)
 MEDIA.mkdir(parents=True,exist_ok=True)
 DATA.mkdir(parents=True, exist_ok=True)
 PUBLIC.mkdir(exist_ok=True)
-app = FastAPI(title="NexVain", version="0.1.0")
+app = FastAPI(title="NexVain", version="0.2.0")
+@app.middleware("http")
+async def protect_admin(request: Request, call_next):
+    path=request.url.path
+    if path == "/admin" or path.startswith(("/api/","/package/","/media/")):
+        expected=os.environ.get("NEXVAIN_ADMIN_PASSWORD","")
+        if expected:
+            import base64
+            auth=request.headers.get("authorization","")
+            try:
+                scheme,encoded=auth.split(" ",1)
+                user,pwd=base64.b64decode(encoded,validate=True).decode().split(":",1)
+                valid=scheme.lower()=="basic" and hmac.compare_digest(user,os.environ.get("NEXVAIN_ADMIN_USER","admin")) and hmac.compare_digest(pwd,expected)
+            except (ValueError,UnicodeError):
+                valid=False
+            if not valid:
+                return Response("Authentication required",401,headers={"WWW-Authenticate":'Basic realm="NexVain Admin"'})
+        elif request.client is None or request.client.host not in ("127.0.0.1","::1","testclient"):
+            return Response("Admin password required for remote access",403)
+    return await call_next(request)
+
 
 @contextmanager
 def connection():
@@ -56,6 +80,9 @@ with connection() as db:
       key TEXT PRIMARY KEY, value TEXT NOT NULL);
     """)
     db.execute("INSERT OR IGNORE INTO settings VALUES ('theme','blue')")
+    cols={r["name"] for r in db.execute("PRAGMA table_info(dcells)")}
+    if "mode" not in cols:
+        db.execute("ALTER TABLE dcells ADD COLUMN mode TEXT NOT NULL DEFAULT 'editor'")
 
 class TopicIn(BaseModel):
     name: str = Field(min_length=1,max_length=120)
@@ -68,6 +95,7 @@ class DcellIn(BaseModel):
     description: str = ""
     template: str = "standard"
     page: dict = Field(default_factory=dict)
+    mode: str = "editor"
 
 class RelationIn(BaseModel):
     dcell_id: int
@@ -130,16 +158,16 @@ def list_dcells():
 @app.post("/api/dcells")
 def create_dcell(item: DcellIn):
     with connection() as db:
-        cur=db.execute("INSERT INTO dcells(name,description,template,page) VALUES (?,?,?,?)",
-            (item.name,item.description,item.template,json.dumps(item.page,ensure_ascii=False)))
+        cur=db.execute("INSERT INTO dcells(name,description,template,page,mode) VALUES (?,?,?,?,?)",
+            (item.name,item.description,item.template,json.dumps(item.page,ensure_ascii=False),item.mode))
         return one(db,"dcells",cur.lastrowid)
 
 @app.put("/api/dcells/{ident}")
 def update_dcell(ident: int,item: DcellIn):
     with connection() as db:
         one(db,"dcells",ident)
-        db.execute("UPDATE dcells SET name=?,description=?,template=?,page=? WHERE id=?",
-            (item.name,item.description,item.template,json.dumps(item.page,ensure_ascii=False),ident))
+        db.execute("UPDATE dcells SET name=?,description=?,template=?,page=?,mode=? WHERE id=?",
+            (item.name,item.description,item.template,json.dumps(item.page,ensure_ascii=False),item.mode,ident))
         return one(db,"dcells",ident)
 
 @app.delete("/api/dcells/{ident}")
@@ -147,6 +175,7 @@ def delete_dcell(ident: int):
     with connection() as db:
         one(db,"dcells",ident)
         db.execute("DELETE FROM dcells WHERE id=?",(ident,))
+        shutil.rmtree(PACKAGES/str(ident),ignore_errors=True)
         return {"ok":True}
 
 @app.get("/api/topics/{ident}/dcells")
@@ -179,6 +208,62 @@ def dcell_topics(ident: int):
           SELECT t.id,t.name,x.alias FROM topic_dcells x
           JOIN topics t ON t.id=x.topic_id WHERE x.dcell_id=? ORDER BY t.position,t.id""",(ident,))]
 
+
+
+PACKAGE_EXT={".html",".htm",".css",".js",".mjs",".json",".png",".jpg",".jpeg",".webp",".gif",".svg",".woff",".woff2",".ttf",".ico",".txt",".csv"}
+@app.post("/api/dcells/{ident}/package")
+async def upload_page_package(ident: int,file: UploadFile=File(...)):
+    with connection() as db: one(db,"dcells",ident)
+    raw=await file.read(50*1024*1024+1)
+    if len(raw)>50*1024*1024: raise HTTPException(413,"ZIP exceeds 50MB")
+    try:
+        archive=zipfile.ZipFile(io.BytesIO(raw))
+        entries=[]
+        total=0
+        infos=archive.infolist()
+        if not 0<len(infos)<=300: raise ValueError("Invalid file count")
+        for info in infos:
+            if info.is_dir():continue
+            path=Path(info.filename)
+            if (info.filename.startswith("/") or chr(92) in info.filename or
+                ".." in path.parts or ":" in info.filename or
+                path.suffix.lower() not in PACKAGE_EXT):
+                raise ValueError("Unsafe ZIP path or type")
+            mode=(info.external_attr>>16)&0o170000
+            if mode not in (0,0o100000):raise ValueError("Special file not allowed")
+            if info.file_size>15*1024*1024:raise ValueError("Entry too large")
+            total+=info.file_size
+            if total>50*1024*1024:raise ValueError("Uncompressed package too large")
+            entries.append((info,path))
+        if not any(str(p)=="index.html" for _,p in entries):
+            raise ValueError("Root index.html required")
+        stage=PACKAGES/(str(ident)+"-staging")
+        shutil.rmtree(stage,ignore_errors=True)
+        stage.mkdir(parents=True)
+        for info,path in entries:
+            destination=stage/path
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            with archive.open(info) as src,destination.open("wb") as dst:
+                shutil.copyfileobj(src,dst)
+        target=PACKAGES/str(ident)
+        previous=PACKAGES/(str(ident)+"-old")
+        shutil.rmtree(previous,ignore_errors=True)
+        if target.exists():target.rename(previous)
+        stage.rename(target)
+        shutil.rmtree(previous,ignore_errors=True)
+    except (OSError,ValueError,zipfile.BadZipFile) as exc:
+        raise HTTPException(400,str(exc))
+    with connection() as db:
+        db.execute("UPDATE dcells SET mode='package' WHERE id=?",(ident,))
+    return {"ok":True,"count":len(entries),"preview":f"/package/{ident}/index.html"}
+
+@app.get("/package/{ident}/{path:path}")
+def preview_package(ident:int,path:str):
+    root=(PACKAGES/str(ident)).resolve()
+    target=(root/path).resolve()
+    if not target.is_relative_to(root) or not target.is_file():
+        raise HTTPException(404,"Not found")
+    return FileResponse(target,headers={"Content-Security-Policy":"sandbox allow-scripts; default-src 'self' data: blob:; connect-src 'none'; object-src 'none'"})
 
 @app.post("/api/assets")
 async def upload_asset(file: UploadFile = File(...)):
@@ -351,6 +436,12 @@ def publish():
     staging=ROOT / ".published-staging"
     if staging.exists(): shutil.rmtree(staging)
     staging.mkdir()
+    for d in dcells:
+        if d.get("mode")=="package":
+            source=PACKAGES/str(d["id"])
+            if not (source/"index.html").is_file():
+                raise HTTPException(409,"No package for dcell "+str(d["id"]))
+            shutil.copytree(source,staging/"custom"/("dcell-"+str(d["id"])))
     # Export only re-encoded managed assets, never upload originals or DB files.
     shutil.copytree(MEDIA, staging / "media")
     try:
@@ -362,7 +453,10 @@ def publish():
             content=fragment(t["page"])+f'<div class="cards">{cards}</div>'
             (staging/f'topic-{t["id"]}.html').write_text(render_document(t["name"],t["description"],content,nav_html,theme,safe_css(t["page"].get("css",""))),encoding="utf-8")
         for d in dcells:
-            content=fragment(d["page"]) or '<div class="panel"><p>'+html.escape(d["description"])+'</p></div>'
+            if d.get("mode")=="package":
+                content=('<iframe title="'+html.escape(d["name"],quote=True)+'" src="custom/dcell-'+str(d["id"])+'/index.html" sandbox="allow-scripts" referrerpolicy="no-referrer" style="width:100%;height:calc(100vh - 180px);border:0"></iframe>')
+            else:
+                content=fragment(d["page"]) or '<div class="panel"><p>'+html.escape(d["description"])+'</p></div>'
             (staging/f'dcell-{d["id"]}.html').write_text(render_document(d["name"],d["description"],content,nav_html,theme,safe_css(d["page"].get("css",""))),encoding="utf-8")
         old=ROOT/".published-old"
         if old.exists(): shutil.rmtree(old)
