@@ -682,21 +682,23 @@ THEMES = {
 "light": ("#f0f4f8","#ffffff","#1d3045","#1873ac")
 }
 BASE_CSS = """
-*{box-sizing:border-box}body{margin:0;font-family:Inter,'Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text)}
-.shell{display:flex;min-height:100vh}.nav{width:260px;flex-shrink:0;background:var(--panel);padding:24px 15px}
-.nav h2{font-size:22px;margin:0 0 28px}.nav a{display:block;color:var(--text);padding:10px 12px;text-decoration:none;border-radius:7px}
-.nav a:hover,.nav a.current{background:var(--accent);color:#061422}.nav .sub{padding-left:27px;font-size:14px}
-.nav .group{margin-top:14px;font-weight:700}.stage{flex:1;min-width:0;padding:32px}
-h1{font-size:30px}.intro{opacity:.75}.content{margin-top:24px}.panel{padding:26px;background:var(--panel);border-radius:14px}
+*{box-sizing:border-box}
+html{width:1920px;height:1080px;margin:0}
+body{width:1920px;height:1080px;margin:0;font-family:Inter,'Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text)}
+.shell{display:flex;width:1920px;height:1080px;overflow:hidden}
+.nav{width:300px;height:1080px;flex:0 0 300px;overflow-y:auto;background:var(--panel);padding:24px 15px}
+.nav h2{font-size:22px;margin:0 0 28px}
+.nav a{display:block;color:var(--text);padding:14px 16px;text-decoration:none;border-radius:7px;font-size:17px}
+.nav a:hover,.nav a.current{background:var(--accent);color:#061422}
+.nav .sub{padding-left:27px;font-size:16px}
+.nav .group{margin-top:14px;font-weight:700}
+.stage{width:1620px;height:1080px;flex:0 0 1620px;min-width:0;overflow-y:auto;overflow-x:hidden;padding:38px 48px}
+h1{font-size:30px}.intro{opacity:.75}.content{margin-top:24px}
+.panel{padding:26px;background:var(--panel);border-radius:14px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:15px}
 .card{padding:24px;background:var(--panel);border-radius:12px;text-decoration:none;color:var(--text)}
-.card:hover{outline:1px solid var(--accent)}img{max-width:100%;height:auto}
-.screen-controls{position:fixed;bottom:18px;right:20px;display:flex;gap:8px;z-index:500}
-.screen-controls button{font:inherit;background:var(--panel);color:var(--text);border:1px solid var(--accent);padding:8px 14px;border-radius:7px;cursor:pointer;opacity:.4}
-.screen-controls:hover button,.screen-controls button:focus-visible{opacity:1}
-@media(min-width:1920px){.nav{width:300px}.stage{padding:38px 48px}.content{max-width:1900px}.nav a{font-size:17px;padding:14px 16px}.nav .sub{font-size:16px}}
-@media(max-width:850px){.shell{display:block}.nav{width:100%;padding:10px;display:flex;flex-wrap:wrap;gap:4px}.nav h2{width:100%;margin:0}.nav a{padding:8px}.stage{padding:16px}.screen-controls{bottom:8px;right:8px}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important}}
+.card:hover{outline:1px solid var(--accent)}
+img{max-width:100%;height:auto}
 """
 
 def safe_css(value):
@@ -725,34 +727,7 @@ def render_document(title, intro, content, nav, theme, custom_css=""):
     <body><div class="shell"><aside class="nav"><h2>NexVain</h2>{nav}</aside>
     <main class="stage"><h1>{html.escape(title)}</h1>
     <p class="intro">{html.escape(intro)}</p><section class="content">{content}</section>
-    <div class="screen-controls" aria-label="大屏操作">
-    <button id="nv-full" title="切换全屏 (F)">⛶ 全屏</button>
-    <button id="nv-play" title="开始或停止轮播 (空格)">▶ 轮播</button>
-    </div>
     </main></div>
-    <script>
-    (()=>{{
-      const pages=[...document.querySelectorAll('aside.nav a[href]')].map(x=>x.getAttribute('href')).filter(Boolean);
-      let timer=null;
-      const active=()=>location.pathname.split('/').pop()||'index.html';
-      const next=(n)=>{{const i=pages.indexOf(active());location.href=pages[(Math.max(i,0)+n+pages.length)%pages.length];}};
-      const play=document.getElementById('nv-play');
-      const running=()=>sessionStorage.getItem('nv-rotate')==='1';
-      const sync=()=>{{play.textContent=running()?'⏸ 停止':'▶ 轮播';}};
-      const start=()=>{{if(timer)clearInterval(timer);if(running()&&pages.length>1)timer=setInterval(()=>next(1),12000);sync();}};
-      play.addEventListener('click',()=>{{sessionStorage.setItem('nv-rotate',running()?'0':'1');start();}});
-      document.getElementById('nv-full').addEventListener('click',()=>{{if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen?.();}});
-      document.addEventListener('keydown',e=>{{
-       if(e.target.closest('input,textarea,select,[contenteditable]'))return;
-       if(e.key==='ArrowRight')next(1);
-       if(e.key==='ArrowLeft')next(-1);
-       if(e.key.toLowerCase()==='f'&&!e.ctrlKey)document.getElementById('nv-full').click();
-       if(e.code==='Space'){{e.preventDefault();play.click();}}
-      }});
-      if(new URLSearchParams(location.search).get('autoplay')==='1')sessionStorage.setItem('nv-rotate','1');
-      sync();start();
-    }})();
-    </script>
     </body></html>"""
 
 @app.get("/api/publish/check")
