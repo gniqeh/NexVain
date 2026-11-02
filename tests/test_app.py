@@ -73,3 +73,18 @@ def test_password_protection(monkeypatch):
     hdr={"Authorization":"Basic "+base64.b64encode(b"admin:secret-test").decode()}
     assert client.get("/api/topics",headers=hdr).status_code==200
     monkeypatch.delenv("NEXVAIN_ADMIN_PASSWORD")
+
+def test_directory_import(monkeypatch,tmp_path):
+    root=tmp_path/"sources"
+    page=root/"sample"
+    page.mkdir(parents=True)
+    (page/"index.html").write_text("<h1>服务器目录页面</h1>",encoding="utf-8")
+    (page/"main.js").write_text("document.body.dataset.ready='yes'",encoding="utf-8")
+    monkeypatch.setenv("NEXVAIN_IMPORT_ROOT",str(root))
+    d=client.post("/api/dcells",json={"name":"目录导入"}).json()
+    invalid=client.post(f"/api/dcells/{d['id']}/import-directory",json={"path":"../outside"})
+    assert invalid.status_code==400
+    valid=client.post(f"/api/dcells/{d['id']}/import-directory",json={"path":"sample"})
+    assert valid.status_code==200,valid.text
+    assert client.post("/api/publish").status_code==200
+    assert "服务器目录页面" in client.get(f"/custom/dcell-{d['id']}/index.html").text
