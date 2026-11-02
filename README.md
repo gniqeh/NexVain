@@ -57,6 +57,16 @@ pytest -q
 3. 上传 ZIP，后台保存到 `data/packages/<dcell_id>/`；可预览。
 4. 点击发布，文件会出现在 `published/custom/dcell-<id>/`，在 dcell 展示页中以 `iframe sandbox="allow-scripts"` 加载。
 
+也支持**服务器已有目录导入**，供 Python/Jupyter 自动生成的静态页面使用。先配置：
+
+```bash
+export NEXVAIN_IMPORT_ROOT=/home/youruser/nexvain_pages
+```
+
+然后在 dcell 编辑窗口输入相对于此根目录的子目录名，点击「导入服务器目录」。系统会校验路径后复制页面文件，杜绝任意读取服务器其他位置。原目录修改后需要重新导入并发布。
+
+示例项目：`examples/wild-dcell/`，可以自行压缩其中的文件上传。
+
 单 ZIP 不超过 50MB，最多 300 文件，单文件不超过 15MB（解压后总量也不超过 50MB）。只允许静态网页常用扩展名，拦截路径穿越及符号链接。
 
 **安全说明：** ZIP 是可执行 HTML/JS。只导入可信来源，提前脱敏，不要上传原始科研数据。页面默认嵌入 sandbox iframe，可能限制一些需要同源访问、弹窗或第三方网络接口的功能。正式面向公网运行时，建议让自定义页面使用独立静态域名，不要把管理接口与不可信 HTML 放在同一安全域。
