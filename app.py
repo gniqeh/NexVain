@@ -272,7 +272,7 @@ def publish():
             (staging/f'topic-{t["id"]}.html').write_text(render_document(t["name"],t["description"],content,nav_html,theme,safe_css(t["page"].get("css",""))),encoding="utf-8")
         for d in dcells:
             content=fragment(d["page"]) or '<div class="panel"><p>'+html.escape(d["description"])+'</p></div>'
-            (staging/f'dcell-{d["id"]}.html').write_text(render_document(d["name"],d["description"],content,nav_html,theme),encoding="utf-8")
+            (staging/f'dcell-{d["id"]}.html').write_text(render_document(d["name"],d["description"],content,nav_html,theme,safe_css(d["page"].get("css",""))),encoding="utf-8")
         old=ROOT/".published-old"
         if old.exists(): shutil.rmtree(old)
         if PUBLIC.exists(): PUBLIC.rename(old)
