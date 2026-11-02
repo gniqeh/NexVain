@@ -401,7 +401,7 @@ async function sourceLivePreview(){
    const css=code.replace(/<\//g,'<\\/');
    html=html.replace('</head>','<style>'+css+'</style></head>');
   }else if(path.endsWith('.js')){
-   html=html.replace('</body>','<script>'+code.replace(/<\/script/gi,'<\\/script')+'</script></body>');
+   html=html.replace('</body>','<scr'+'ipt>'+code.split('</scr'+'ipt').join('<\\/scr'+'ipt')+'</scr'+'ipt></body>');
   }
   if(!/<base\s/i.test(html))html=html.replace(/<head[^>]*>/i,x=>x+'<base href="'+prefix+'">');
   iframe.srcdoc=html;
