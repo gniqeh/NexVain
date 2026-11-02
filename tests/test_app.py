@@ -1,11 +1,13 @@
 import os
 from pathlib import Path
+import base64
 
 os.environ["NEXVAIN_DATA"] = "/tmp/nexvain-test-data"
+os.environ["NEXVAIN_ADMIN_PASSWORD"] = "test-only-pass"
 from fastapi.testclient import TestClient
 from app import app
 
-client = TestClient(app)
+client = TestClient(app,headers={"Authorization":"Basic "+base64.b64encode(b"admin:test-only-pass").decode(),"X-NexVain-Confirm":"test-only-pass"})
 
 def test_topic_dcell_publish():
     t = client.post("/api/topics", json={"name":"病害专题"}).json()
@@ -228,3 +230,26 @@ def test_source_workspace_package_edit_in_place():
     assert client.put(f"/api/dcells/{d['id']}/source/file",
       params={"path":"index.html"},json={"content":"<h1>新页面</h1>"}).status_code==200
     assert "新页面" in client.get(f"/package/{d['id']}/index.html").text
+
+def test_history_restore_and_critical_confirmation():
+    import sqlite3
+    t=client.post("/api/topics",json={"name":"回滚前状态"}).json()
+    assert client.get("/api/history").status_code==200
+    checkpoint=client.post("/api/history/checkpoint").json()["snapshot"]
+    assert checkpoint
+    assert client.put(f"/api/topics/{t['id']}",json={"name":"已经修改"}).status_code==200
+    unauthorized=client.post(f"/api/history/restore/{checkpoint}",headers={"X-NexVain-Confirm":"wrong"})
+    assert unauthorized.status_code==403
+    restored=client.post(f"/api/history/restore/{checkpoint}")
+    assert restored.status_code==200,restored.text
+    assert restored.json()["rescue_checkpoint"]
+    assert any(x["name"]=="回滚前状态" for x in client.get("/api/topics").json())
+    assert not any(x["name"]=="已经修改" for x in client.get("/api/topics").json())
+    assert any(x["action"]=="restore" for x in client.get("/api/history").json()["events"])
+
+def test_confirmation_required_for_publish_and_delete():
+    item=client.post("/api/topics",json={"name":"受保护内容"}).json()
+    wrong=client.delete(f"/api/topics/{item['id']}",headers={"X-NexVain-Confirm":"wrong"})
+    assert wrong.status_code==403
+    assert client.post("/api/publish",headers={"X-NexVain-Confirm":"wrong"}).status_code==403
+    assert client.delete(f"/api/topics/{item['id']}").status_code==200
