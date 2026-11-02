@@ -105,3 +105,26 @@ def test_nav_requires_relation_and_republish():
     assert f'dcell-{d["id"]}.html' in page
     assert client.get("/").headers["cache-control"]=="no-store"
     assert client.get("/api/publish/status").json()["needs_publish"] is False
+
+def test_uploaded_image_is_accessible_and_published_without_backend():
+    import io
+    from PIL import Image
+    image=Image.new("RGB",(16,16),"blue")
+    data=io.BytesIO()
+    image.save(data,format="PNG")
+    response=client.post("/api/assets",files={"file":("sample.png",data.getvalue(),"image/png")})
+    assert response.status_code==200,response.text
+    source_url=response.json()["url"]
+    preview=client.get(source_url)
+    assert preview.status_code==200,preview.text
+    assert preview.headers["content-type"].startswith("image/png")
+    dcell=client.post("/api/dcells",json={
+        "name":"图片发布验证",
+        "page":{"html":'<div><img src="'+source_url+'" alt="图片验证"></div>'}
+    }).json()
+    assert client.post("/api/publish").status_code==200
+    published=client.get(f"/dcell-{dcell['id']}.html").text
+    assert 'src="media/' in published
+    assert 'src="/media/' not in published
+    assert client.get(source_url.lstrip("/")).status_code==200
+    assert client.get("/media/"+response.json()["name"]).status_code==200
