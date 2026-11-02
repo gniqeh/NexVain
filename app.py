@@ -4,11 +4,14 @@ import json
 import os
 import re
 import shutil
+import io
+import uuid
+import math
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -18,6 +21,8 @@ DATA = Path(os.environ.get("NEXVAIN_DATA", str(ROOT / "data")))
 DB = DATA / "nexvain.sqlite3"
 PUBLIC = ROOT / "published"
 ASSETS = ROOT / "web"
+MEDIA = DATA / "media"
+MEDIA.mkdir(parents=True,exist_ok=True)
 DATA.mkdir(parents=True, exist_ok=True)
 PUBLIC.mkdir(exist_ok=True)
 app = FastAPI(title="NexVain", version="0.1.0")
@@ -68,6 +73,12 @@ class RelationIn(BaseModel):
     dcell_id: int
     alias: str = ""
     position: int = 0
+
+class ChartIn(BaseModel):
+    title: str = Field(default='统计图',max_length=100)
+    kind: str = 'bar'
+    labels: list[str] = Field(min_length=1,max_length=20)
+    values: list[float] = Field(min_length=1,max_length=20)
 
 class SettingsIn(BaseModel):
     theme: str
@@ -168,6 +179,84 @@ def dcell_topics(ident: int):
           SELECT t.id,t.name,x.alias FROM topic_dcells x
           JOIN topics t ON t.id=x.topic_id WHERE x.dcell_id=? ORDER BY t.position,t.id""",(ident,))]
 
+
+@app.post("/api/assets")
+async def upload_asset(file: UploadFile = File(...)):
+    """Only decoded and re-encoded image pixels are retained, dropping EXIF."""
+    from PIL import Image, ImageOps, UnidentifiedImageError
+    payload = await file.read(10 * 1024 * 1024 + 1)
+    if len(payload) > 10 * 1024 * 1024:
+        raise HTTPException(413,"File exceeds 10MB")
+    try:
+        image = Image.open(io.BytesIO(payload))
+        image.verify()
+        image = Image.open(io.BytesIO(payload))
+        if image.width * image.height > 30_000_000:
+            raise HTTPException(413,"Image exceeds 30MP")
+        image = ImageOps.exif_transpose(image)
+        image.thumbnail((2560, 2560))
+        if image.mode not in ("RGB", "RGBA"):
+            image = image.convert("RGB")
+    except (UnidentifiedImageError, OSError, ValueError):
+        raise HTTPException(400, "Not a supported image")
+    name = uuid.uuid4().hex + ".png"
+    image.save(MEDIA / name, format="PNG", optimize=True)
+    return {"url": "/media/" + name, "name": name}
+
+@app.post("/api/charts")
+def create_chart(chart: ChartIn):
+    """Generate a self-contained static SVG chart with no remote runtime."""
+    if chart.kind not in ("bar","line"):
+        raise HTTPException(400,"Supported chart types: bar, line")
+    if len(chart.labels) != len(chart.values):
+        raise HTTPException(400,"Number of labels and values must match")
+    if not all(math.isfinite(n) for n in chart.values):
+        raise HTTPException(400,"Values must be finite")
+    labels=[html.escape(str(v)[:28],quote=True) for v in chart.labels]
+    vals=chart.values
+    maxval=max([0]+vals)
+    minval=min([0]+vals)
+    span=max(maxval-minval,1e-9)
+    left,top,width,height=72,55,820,270
+    base=top+height*(maxval/span)
+    spacing=width/len(vals)
+    parts=[
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" role="img">',
+      '<rect width="960" height="420" rx="14" fill="#102b45"/>',
+      '<text x="36" y="34" fill="#e6f5ff" font-size="22">'+html.escape(chart.title)+'</text>'
+    ]
+    for i in range(5):
+        y=top+i*height/4
+        label=maxval-i*span/4
+        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="910" y2="{y:.1f}" stroke="#31506b"/>')
+        parts.append(f'<text x="65" y="{y+4:.1f}" text-anchor="end" fill="#a5c4d7" font-size="12">{label:.2g}</text>')
+    points=[]
+    for i,(label,val) in enumerate(zip(labels,vals)):
+        x=left+(i+.5)*spacing
+        y=top+(maxval-val)*height/span
+        points.append((x,y))
+        parts.append(f'<text x="{x:.1f}" y="360" text-anchor="middle" fill="#c9dce8" font-size="12">{label}</text>')
+        if chart.kind=="bar":
+            w=min(spacing*.65,72)
+            parts.append(f'<rect x="{x-w/2:.1f}" y="{min(y,base):.1f}" width="{w:.1f}" height="{max(abs(y-base),1):.1f}" rx="3" fill="#38b6e9"/>')
+    if chart.kind=="line":
+        path=" ".join(("M" if i==0 else "L")+f"{x:.1f},{y:.1f}" for i,(x,y) in enumerate(points))
+        parts.append(f'<path d="{path}" fill="none" stroke="#38b6e9" stroke-width="4"/>')
+        for x,y in points:
+            parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#7de0ff"/>')
+    parts.append("</svg>")
+    name=uuid.uuid4().hex+".svg"
+    (MEDIA/name).write_text("".join(parts),encoding="utf-8")
+    return {"url":"/media/"+name,"name":name}
+
+@app.get("/media/{filename}")
+def media(filename: str):
+    if not re.fullmatch(r"[a-f0-9]{32}\\.(png|svg)",filename):
+        raise HTTPException(404,"Not found")
+    path=MEDIA/filename
+    if not path.is_file(): raise HTTPException(404,"Not found")
+    return FileResponse(path,media_type="image/svg+xml" if filename.endswith(".svg") else "image/png")
+
 @app.get("/api/settings")
 def settings():
     with connection() as db:
@@ -262,6 +351,8 @@ def publish():
     staging=ROOT / ".published-staging"
     if staging.exists(): shutil.rmtree(staging)
     staging.mkdir()
+    # Export only re-encoded managed assets, never upload originals or DB files.
+    shutil.copytree(MEDIA, staging / "media")
     try:
         cards="".join(f'<a class="card" href="topic-{t["id"]}.html"><h2>{html.escape(t["name"])}</h2><p>{html.escape(t["description"])}</p></a>' for t in topics)
         (staging/"index.html").write_text(render_document("专题库首页","农业专题数据资源展示",f'<div class="cards">{cards}</div>',nav_html,theme),encoding="utf-8")
