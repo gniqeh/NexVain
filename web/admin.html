@@ -47,8 +47,8 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 </dialog>
 <dialog id="editor-dialog" class="dialog" style="width:min(1450px,98vw)">
 <div class="dialog-head"><h2 id="editor-title">页面设计</h2><div class="row"><button onclick="saveDesign()">保存设计</button><button class="secondary" onclick="closeEditor()">关闭</button></div></div>
-<p class="muted">支持预置 HTML 组件及可视化编辑。首次加载编辑器需要联网；离线部署应将 GrapesJS 资源放到本地。当前静态发布保留安全 HTML 结构，不导出自定义 CSS。</p>
-<div id="editor"></div><textarea id="fallback-html" class="hidden" style="height:400px"></textarea>
+<p class="muted">支持预置 HTML 组件及可视化编辑。GrapesJS 首次加载需要联网。上传图片将重新编码并去除 EXIF；统计图生成独立 SVG，发布后无需网络。</p>
+<div class="row" style="margin:12px 0"><input id="asset-file" type="file" accept="image/png,image/jpeg,image/webp" style="width:250px"><button type="button" onclick="uploadImage()">上传图片并插入</button><button type="button" onclick="toggleChartForm()">添加统计图</button></div><div id="chart-form" class="card hidden"><label>图表标题</label><input id="chart-title" value="数据分布"><label>图表类型</label><select id="chart-kind"><option value="bar">柱状图</option><option value="line">折线图</option></select><label>图表数据（每行：名称,数值）</label><textarea id="chart-data" placeholder="玉米,30&#10;水稻,45&#10;大豆,25"></textarea><button type="button" onclick="insertChart()">生成图表并插入</button></div><div id="editor"></div><textarea id="fallback-html" class="hidden" style="height:400px"></textarea>
 </dialog>
 <script src="https://unpkg.com/grapesjs@0.22.14/dist/grapes.min.js"></script>
 <script>
@@ -130,6 +130,7 @@ function openEditor(){
  if(!current)return;
  const dialog=document.getElementById('editor-dialog');
  document.getElementById('editor-title').textContent=current.name+' · 页面设计';
+ document.getElementById('chart-form').classList.add('hidden');
  const initial=current.page?.html||(kind==='dcell'?seed[current.template]||seed.standard:'<section class="panel"><h2>专题介绍</h2><p>请填写专题首页内容。</p></section>');
  if(editor){editor.destroy();editor=null}
  const host=document.getElementById('editor');host.innerHTML='';
@@ -137,8 +138,8 @@ function openEditor(){
  if(window.grapesjs){
   host.classList.remove('hidden');fallback.classList.add('hidden');
   editor=grapesjs.init({container:'#editor',height:'540px',storageManager:false,
-   components:initial,styleManager:{sectors:[]},
-   blockManager:{appendTo:'.gjs-blocks-cs',blocks:[
+   components:initial,
+   blockManager:{blocks:[
     {id:'heading',label:'标题',content:'<h2>新标题</h2>'},
     {id:'text',label:'文本',content:'<p>点击修改文字内容</p>'},
     {id:'panel',label:'内容区',content:'<section class="panel"><h2>标题</h2><p>简介</p></section>'},
@@ -150,6 +151,10 @@ function openEditor(){
  }
  dialog.showModal();
 }
+function addToCanvas(html){if(editor){editor.addComponents(html)}else{document.getElementById("fallback-html").value += "\n"+html}}
+async function uploadImage(){const file=document.getElementById("asset-file").files[0];if(!file){alert("先选择图片");return}const form=new FormData();form.append("file",file);try{const r=await fetch("/api/assets",{method:"POST",body:form});if(!r.ok)throw new Error(await r.text());const out=await r.json();addToCanvas(`<div><img src="${out.url}" alt="脱敏展示图片"></div>`);message("图片已插入，保存设计后发布")}catch(e){alert(e.message)}}
+function toggleChartForm(){document.getElementById("chart-form").classList.toggle("hidden")}
+async function insertChart(){try{const lines=document.getElementById("chart-data").value.split(/\r?\n/).filter(x=>x.trim());const labels=[],values=[];for(const line of lines){const i=line.lastIndexOf(",");if(i<1)throw new Error("每行使用 名称,数值 格式");labels.push(line.slice(0,i).trim());const v=Number(line.slice(i+1));if(!Number.isFinite(v)||line.slice(i+1).trim()==="")throw new Error("无效数值");values.push(v)}const r=await api("/charts",{method:"POST",body:JSON.stringify({title:document.getElementById("chart-title").value,kind:document.getElementById("chart-kind").value,labels,values})});addToCanvas(`<div><img src="${r.url}" alt="数据统计图"></div>`);document.getElementById("chart-form").classList.add("hidden");message("图表已插入")}catch(e){alert(e.message)}}
 function closeEditor(){document.getElementById('editor-dialog').close();if(editor){editor.destroy();editor=null}}
 async function saveDesign(){
  if(!current)return;
