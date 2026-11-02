@@ -14,7 +14,8 @@ from pathlib import Path
 from contextlib import contextmanager
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, HTMLResponse
+from template_engine import TEMPLATES, DEFAULT_CONTENT, CSS as TEMPLATE_CSS, render_template
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -29,7 +30,7 @@ PACKAGES.mkdir(parents=True,exist_ok=True)
 MEDIA.mkdir(parents=True,exist_ok=True)
 DATA.mkdir(parents=True, exist_ok=True)
 PUBLIC.mkdir(exist_ok=True)
-app = FastAPI(title="NexVain", version="0.2.0")
+app = FastAPI(title="NexVain", version="0.4.0")
 @app.middleware("http")
 async def protect_admin(request: Request, call_next):
     path=request.url.path
@@ -94,6 +95,8 @@ with connection() as db:
     cols={r["name"] for r in db.execute("PRAGMA table_info(dcells)")}
     if "mode" not in cols:
         db.execute("ALTER TABLE dcells ADD COLUMN mode TEXT NOT NULL DEFAULT 'editor'")
+    if "content" not in cols:
+        db.execute("ALTER TABLE dcells ADD COLUMN content TEXT NOT NULL DEFAULT '{}'")
 
 class TopicIn(BaseModel):
     name: str = Field(min_length=1,max_length=120)
@@ -107,6 +110,7 @@ class DcellIn(BaseModel):
     template: str = "standard"
     page: dict = Field(default_factory=dict)
     mode: str = "editor"
+    content: dict = Field(default_factory=dict)
 
 class RelationIn(BaseModel):
     dcell_id: int
@@ -126,6 +130,8 @@ def parse_row(row):
     obj = dict(row)
     if "page" in obj:
         obj["page"] = json.loads(obj["page"])
+    if "content" in obj:
+        obj["content"] = json.loads(obj["content"])
     return obj
 
 def one(db, table, ident):
@@ -169,16 +175,16 @@ def list_dcells():
 @app.post("/api/dcells")
 def create_dcell(item: DcellIn):
     with connection() as db:
-        cur=db.execute("INSERT INTO dcells(name,description,template,page,mode) VALUES (?,?,?,?,?)",
-            (item.name,item.description,item.template,json.dumps(item.page,ensure_ascii=False),item.mode))
+        cur=db.execute("INSERT INTO dcells(name,description,template,page,mode,content) VALUES (?,?,?,?,?,?)",
+            (item.name,item.description,item.template,json.dumps(item.page,ensure_ascii=False),item.mode,json.dumps(item.content,ensure_ascii=False)))
         return one(db,"dcells",cur.lastrowid)
 
 @app.put("/api/dcells/{ident}")
 def update_dcell(ident: int,item: DcellIn):
     with connection() as db:
         one(db,"dcells",ident)
-        db.execute("UPDATE dcells SET name=?,description=?,template=?,page=?,mode=? WHERE id=?",
-            (item.name,item.description,item.template,json.dumps(item.page,ensure_ascii=False),item.mode,ident))
+        db.execute("UPDATE dcells SET name=?,description=?,template=?,page=?,mode=?,content=? WHERE id=?",
+            (item.name,item.description,item.template,json.dumps(item.page,ensure_ascii=False),item.mode,json.dumps(item.content,ensure_ascii=False),ident))
         return one(db,"dcells",ident)
 
 @app.delete("/api/dcells/{ident}")
@@ -188,6 +194,41 @@ def delete_dcell(ident: int):
         db.execute("DELETE FROM dcells WHERE id=?",(ident,))
         shutil.rmtree(PACKAGES/str(ident),ignore_errors=True)
         return {"ok":True}
+
+
+@app.get("/api/templates")
+def available_templates():
+    return {"templates":[{"id":key,**value} for key,value in TEMPLATES.items()],
+            "default_content":DEFAULT_CONTENT}
+
+@app.post("/api/dcells/{ident}/clone")
+def clone_dcell(ident: int):
+    with connection() as db:
+        source=one(db,"dcells",ident)
+        cur=db.execute("""INSERT INTO dcells(name,description,template,page,mode,content)
+            VALUES (?,?,?,?,?,?)""",(
+            source["name"]+"（副本）",source["description"],source["template"],
+            json.dumps(source["page"],ensure_ascii=False),
+            source["mode"],
+            json.dumps(source.get("content",{}),ensure_ascii=False)))
+        new_id=cur.lastrowid
+        if source["mode"]=="package":
+            path=PACKAGES/str(ident)
+            if path.exists():
+                shutil.copytree(path,PACKAGES/str(new_id))
+        return one(db,"dcells",new_id)
+
+@app.get("/api/dcells/{ident}/preview",response_class=HTMLResponse)
+def preview_template(ident:int):
+    with connection() as db:
+        d=one(db,"dcells",ident)
+        theme=db.execute("SELECT value FROM settings WHERE key='theme'").fetchone()[0]
+    if d["mode"]!="template":
+        raise HTTPException(400,"This dcell does not use a data template")
+    tpl=d["template"] if d["template"] in TEMPLATES else "overview"
+    return HTMLResponse(render_document(d["name"],d["description"],
+        render_template(d["name"],d["description"],tpl,d.get("content",{})),
+        '<a href="/admin">返回管理</a>',theme,TEMPLATE_CSS))
 
 @app.get("/api/topics/{ident}/dcells")
 def topic_dcells(ident: int):
@@ -538,9 +579,13 @@ def publish():
         for d in dcells:
             if d.get("mode")=="package":
                 content=('<iframe title="'+html.escape(d["name"],quote=True)+'" src="custom/dcell-'+str(d["id"])+'/index.html" sandbox="allow-scripts" referrerpolicy="no-referrer" style="width:100%;height:calc(100vh - 180px);border:0"></iframe>')
+            elif d.get("mode")=="template":
+                tpl=d["template"] if d["template"] in TEMPLATES else "overview"
+                content=render_template(d["name"],d["description"],tpl,d.get("content",{}))
             else:
                 content=published_fragment(d["page"]) or '<div class="panel"><p>'+html.escape(d["description"])+'</p></div>'
-            (staging/f'dcell-{d["id"]}.html').write_text(render_document(d["name"],d["description"],content,nav_html,theme,safe_css(d["page"].get("css",""))),encoding="utf-8")
+            style=TEMPLATE_CSS if d.get("mode")=="template" else safe_css(d["page"].get("css",""))
+            (staging/f'dcell-{d["id"]}.html').write_text(render_document(d["name"],d["description"],content,nav_html,theme,style),encoding="utf-8")
         old=ROOT/".published-old"
         if old.exists(): shutil.rmtree(old)
         if PUBLIC.exists(): PUBLIC.rename(old)
