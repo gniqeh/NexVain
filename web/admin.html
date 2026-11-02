@@ -47,15 +47,15 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 </dialog>
 <dialog id="source-dialog" class="dialog" style="width:min(1500px,98vw)">
 <div class="dialog-head"><h2>源码工作台 · <span id="source-heading"></span></h2><div class="row">
-<button class="secondary" onclick="sourceExport()">导出 ZIP</button>
+<button class="secondary" onclick="sourceCopy()">复制源码</button><button class="secondary" onclick="sourceExport()">导出 ZIP</button>
 <button class="secondary" onclick="sourcePreview()">预览页面</button>
-<button onclick="sourceSave()">保存当前文件</button>
+<button id="source-save-btn" onclick="sourceSave()">保存当前文件</button>
 <button class="secondary" onclick="document.getElementById('source-dialog').close()">关闭</button></div></div>
 <p class="muted">左侧选择文件，右侧直接修改 HTML / CSS / JS。保存后点击预览检查，发布后才会更新大屏。仅支持 UTF-8 文本文件，图片等二进制资源请通过 ZIP 导入更新。</p>
 <div id="source-notice" class="notice hidden"></div>
 <div class="source-area"><div id="source-files" class="card"></div><div class="source-main">
 <div class="row" style="margin-bottom:8px"><strong id="source-current">请选择文件</strong><span id="source-dirty" class="muted"></span></div>
-<textarea id="source-code" spellcheck="false" oninput="sourceChanged()"></textarea>
+<textarea id="source-code" spellcheck="false" oninput="sourceChanged()" onkeydown="sourceKeyboard(event)"></textarea>
 </div></div>
 </dialog>
 <dialog id="editor-dialog" class="dialog" style="width:min(1450px,98vw)">
@@ -298,9 +298,20 @@ async function sourceWorkspace(id){
  document.getElementById('source-dialog').showModal();
  document.getElementById('source-files').innerHTML='';
  document.getElementById('source-code').value='';
- document.getElementById('source-code').disabled=d.mode!=='package';
+ document.getElementById('source-code').readOnly=d.mode!=='package';
+ document.getElementById('source-save-btn').disabled=d.mode!=='package';
  document.getElementById('source-current').textContent=d.mode==='package'?'加载文件…':'模板生成的 HTML 可先导出 ZIP';
  if(d.mode==='package')await sourceRefresh();
+ else {
+  try{
+   const r=await api('/dcells/'+id+'/generated-source');
+   sourceOriginal=r.content;sourcePath='';
+   document.getElementById('source-code').value=r.content;
+   document.getElementById('source-current').textContent='生成结果：index.html（只读）';
+   document.getElementById('source-files').innerHTML='<strong>预览源码</strong><p class="muted">index.html（只读）</p>';
+   sourceChanged();
+  }catch(e){alert('生成源码失败：'+e.message)}
+ }
 }
 async function sourceRefresh(){
  if(!sourceDcell)return;
@@ -319,13 +330,13 @@ async function sourceOpen(path){
   const data=await api('/dcells/'+sourceDcell.id+'/source/file?path='+encodeURIComponent(path));
   sourcePath=path;sourceOriginal=data.content;
   document.getElementById('source-code').value=sourceOriginal;
-  document.getElementById('source-code').disabled=false;
+  document.getElementById('source-code').readOnly=false;
   document.getElementById('source-current').textContent=path;
   sourceChanged();
  }catch(e){alert(e.message)}
 }
 async function sourceSave(){
- if(!sourceDcell||!sourcePath)return alert('请先选择一个源码文件');
+ if(!sourceDcell||sourceDcell.mode!=='package'||!sourcePath)return alert('请先转换为独立页面并选择源码文件');
  try{
   await api('/dcells/'+sourceDcell.id+'/source/file?path='+encodeURIComponent(sourcePath),{
    method:'PUT',body:JSON.stringify({content:document.getElementById('source-code').value})
@@ -333,6 +344,20 @@ async function sourceSave(){
   sourceOriginal=document.getElementById('source-code').value;sourceChanged();
   message('源码已保存。预览确认后发布即可更新大屏');
  }catch(e){alert(e.message)}
+}
+function sourceCopy(){
+ const text=document.getElementById('source-code').value;
+ if(!text)return alert('当前没有源码');
+ navigator.clipboard.writeText(text).then(()=>message('源码已复制'),()=>alert('复制失败，请手动选择文本复制'));
+}
+function sourceKeyboard(event){
+ if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){
+  event.preventDefault();if(sourceDcell?.mode==='package')sourceSave();
+ }
+ if(event.key==='Tab'&&!event.ctrlKey&&!event.altKey){
+  event.preventDefault();const el=event.target,begin=el.selectionStart,end=el.selectionEnd;
+  el.setRangeText('  ',begin,end,'end');sourceChanged();
+ }
 }
 function sourcePreview(){
  if(!sourceDcell)return;
