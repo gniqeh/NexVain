@@ -875,12 +875,22 @@ BASE_CSS = """
 html,body{width:100%;height:100%;margin:0;overflow:hidden}
 body{font-family:Inter,'Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text)}
 .shell{position:absolute;left:0;top:0;display:flex;width:1920px;height:1080px;transform-origin:0 0;overflow:hidden}
-.nav{width:300px;height:1080px;flex:0 0 300px;overflow:hidden;background:var(--panel);padding:24px 15px}
-.nav h2{font-size:22px;margin:0 0 28px}
-.nav a{display:block;color:var(--text);padding:14px 16px;text-decoration:none;border-radius:7px;font-size:17px}
+.nav{width:300px;height:1080px;flex:0 0 300px;overflow:hidden;background:var(--panel);padding:24px 8px 24px 15px;display:flex;flex-direction:column}
+.nav h2{font-size:22px;margin:0 0 28px;flex:none;padding-right:7px}
+.nav-list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--accent) transparent;padding-right:7px}
+.nav-list::-webkit-scrollbar{width:6px}
+.nav-list::-webkit-scrollbar-thumb{background:var(--accent);border-radius:6px}
+.nav a{display:block;color:var(--text);padding:14px 16px;text-decoration:none;border-radius:7px;font-size:17px;min-width:0;overflow-wrap:anywhere}
 .nav a:hover,.nav a.current{background:var(--accent);color:#061422}
 .nav .sub{padding-left:27px;font-size:16px}
-.nav .group{margin-top:14px;font-weight:700}
+.nav-group{margin-top:14px}
+.nav-group-heading{display:flex;align-items:stretch;min-width:0}
+.nav-group-heading .group{flex:1;font-weight:700}
+.nav-toggle{flex:0 0 38px;border:0;border-radius:7px;background:transparent;color:var(--text);font-size:18px;cursor:pointer}
+.nav-toggle:hover,.nav-toggle:focus-visible{background:var(--accent);color:#061422}
+.nav-toggle::before{content:'▾';display:block;transition:transform .15s ease}
+.nav-toggle[aria-expanded="false"]::before{transform:rotate(-90deg)}
+.nav-children[hidden]{display:none}
 .stage{width:1620px;height:1080px;flex:0 0 1620px;min-width:0;overflow:hidden;padding:38px 48px}
 .stage-inner{width:100%;transform-origin:0 0}
 h1{font-size:30px}.intro{opacity:.75}.content{margin-top:24px}
@@ -914,13 +924,36 @@ def render_document(title, intro, content, nav, theme, custom_css=""):
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>{html.escape(title)} · NexVain</title><style>{style}</style></head>
-    <body><div class="shell"><aside class="nav"><h2>NexVain</h2>{nav}</aside>
+    <body><div class="shell"><aside class="nav"><h2>NexVain</h2><div class="nav-list">{nav}</div></aside>
     <main class="stage"><div class="stage-inner"><h1>{html.escape(title)}</h1>
     <p class="intro">{html.escape(intro)}</p><section class="content">{content}</section>
     </div></main></div>
     <script>
     (()=>{{
       const shell=document.querySelector('.shell');
+      const navList=document.querySelector('.nav-list');
+      const activePath=location.pathname.split('/').pop()||'index.html';
+      navList.querySelectorAll('a').forEach(link=>{{
+        if(link.getAttribute('href')===activePath)link.classList.add('current');
+      }});
+      navList.querySelectorAll('.nav-group').forEach(group=>{{
+        const button=group.querySelector('.nav-toggle');
+        const children=group.querySelector('.nav-children');
+        const key='nexvain.nav.collapsed.'+group.dataset.topicId;
+        let collapsed=false;
+        try{{collapsed=localStorage.getItem(key)==='1';}}catch(e){{/* storage may be disabled */}}
+        const apply=()=>{{
+          button.setAttribute('aria-expanded',String(!collapsed));
+          button.setAttribute('aria-label',(collapsed?'展开':'折叠')+'专题子目录');
+          children.hidden=collapsed;
+        }};
+        apply();
+        button.addEventListener('click',()=>{{
+          collapsed=!collapsed;
+          apply();
+          try{{localStorage.setItem(key,collapsed?'1':'0');}}catch(e){{/* storage may be disabled */}}
+        }});
+      }});
       const stage=document.querySelector('.stage');
       const inner=document.querySelector('.stage-inner');
       let pending=false;
@@ -980,12 +1013,20 @@ def publish():
     by_id={x["id"]:x for x in dcells}
     nav=['<a href="index.html">专题库首页</a>']
     for topic in topics:
-        nav.append(f'<a class="group" href="topic-{topic["id"]}.html">{html.escape(topic["name"])}</a>')
+        topic_id=topic["id"]
+        nav.append(f'<div class="nav-group" data-topic-id="{topic_id}">')
+        nav.append('<div class="nav-group-heading">'
+                   f'<a class="group" href="topic-{topic_id}.html">{html.escape(topic["name"])}</a>'
+                   f'<button type="button" class="nav-toggle" aria-expanded="true" '
+                   f'aria-controls="nav-children-{topic_id}" aria-label="折叠专题子目录"></button>'
+                   '</div>')
+        nav.append(f'<div class="nav-children" id="nav-children-{topic_id}">')
         for relation in links:
-            if relation["topic_id"]==topic["id"] and relation["dcell_id"] in by_id:
+            if relation["topic_id"]==topic_id and relation["dcell_id"] in by_id:
                 d=by_id[relation["dcell_id"]]
                 alias=relation["alias"] or d["name"]
                 nav.append(f'<a class="sub" href="dcell-{d["id"]}.html">{html.escape(alias)}</a>')
+        nav.append('</div></div>')
     nav_html="".join(nav)
     staging=ROOT / ".published-staging"
     if staging.exists(): shutil.rmtree(staging)
