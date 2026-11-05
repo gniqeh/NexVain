@@ -117,12 +117,31 @@ with connection() as db:
         db.execute("ALTER TABLE dcells ADD COLUMN mode TEXT NOT NULL DEFAULT 'editor'")
     if "content" not in cols:
         db.execute("ALTER TABLE dcells ADD COLUMN content TEXT NOT NULL DEFAULT '{}'")
+    topic_cols={r["name"] for r in db.execute("PRAGMA table_info(topics)")}
+    if "parent_id" not in topic_cols:
+        db.execute("ALTER TABLE topics ADD COLUMN parent_id INTEGER REFERENCES topics(id) ON DELETE RESTRICT")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_topics_parent ON topics(parent_id,position,id)")
 
 class TopicIn(BaseModel):
     name: str = Field(min_length=1,max_length=120)
     description: str = ""
     page: dict = Field(default_factory=dict)
     position: int = 0
+    parent_id: int | None = None
+
+def validate_topic_parent(db, parent_id: int | None, ident: int | None = None):
+    """Only top-level topics may have subtopics; never allow cycles or depth > 2."""
+    if parent_id is None:
+        return
+    if ident == parent_id:
+        raise HTTPException(400,"A topic cannot be its own parent")
+    parent=one(db,"topics",parent_id)
+    if parent["parent_id"] is not None:
+        raise HTTPException(400,"Only top-level topics can be parents")
+    if ident is not None and db.execute(
+        "SELECT 1 FROM topics WHERE parent_id=? LIMIT 1",(ident,)
+    ).fetchone():
+        raise HTTPException(400,"Move child topics before nesting their parent")
 
 class DcellIn(BaseModel):
     name: str = Field(min_length=1,max_length=120)
@@ -380,22 +399,26 @@ def list_topics():
 @app.post("/api/topics")
 def create_topic(item: TopicIn):
     with connection() as db:
-        cur=db.execute("INSERT INTO topics(name,description,page,position) VALUES (?,?,?,?)",
-            (item.name,item.description,json.dumps(item.page,ensure_ascii=False),item.position))
+        validate_topic_parent(db,item.parent_id)
+        cur=db.execute("INSERT INTO topics(name,description,page,position,parent_id) VALUES (?,?,?,?,?)",
+            (item.name,item.description,json.dumps(item.page,ensure_ascii=False),item.position,item.parent_id))
         return one(db,"topics",cur.lastrowid)
 
 @app.put("/api/topics/{ident}")
 def update_topic(ident: int,item: TopicIn):
     with connection() as db:
         one(db,"topics",ident)
-        db.execute("UPDATE topics SET name=?,description=?,page=?,position=? WHERE id=?",
-            (item.name,item.description,json.dumps(item.page,ensure_ascii=False),item.position,ident))
+        validate_topic_parent(db,item.parent_id,ident)
+        db.execute("UPDATE topics SET name=?,description=?,page=?,position=?,parent_id=? WHERE id=?",
+            (item.name,item.description,json.dumps(item.page,ensure_ascii=False),item.position,item.parent_id,ident))
         return one(db,"topics",ident)
 
 @app.delete("/api/topics/{ident}")
 def delete_topic(ident: int):
     with connection() as db:
         one(db,"topics",ident)
+        if db.execute("SELECT 1 FROM topics WHERE parent_id=? LIMIT 1",(ident,)).fetchone():
+            raise HTTPException(409,"This topic has subtopics; move or delete them first")
         db.execute("DELETE FROM topics WHERE id=?",(ident,))
         return {"ok":True}
 
@@ -891,6 +914,9 @@ body{font-family:Inter,'Microsoft YaHei',sans-serif;background:var(--bg);color:v
 .nav-toggle::before{content:'▾';display:block;transition:transform .15s ease}
 .nav-toggle[aria-expanded="false"]::before{transform:rotate(-90deg)}
 .nav-children[hidden]{display:none}
+.nav-subtopic{margin-top:4px;margin-left:14px}
+.nav-subtopic .group{font-size:16px;font-weight:600;padding:11px 8px}
+.nav-level-3{font-size:15px!important;padding-left:30px!important}
 .stage{width:1620px;height:1080px;flex:0 0 1620px;min-width:0;overflow:hidden;padding:38px 48px}
 .stage-inner{width:100%;transform-origin:0 0}
 h1{font-size:30px}.intro{opacity:.75}.content{margin-top:24px}
@@ -1011,21 +1037,37 @@ def publish():
         theme=db.execute("SELECT value FROM settings WHERE key='theme'").fetchone()[0]
         draft_revision=int((db.execute("SELECT value FROM settings WHERE key='draft_revision'").fetchone() or ["0"])[0])
     by_id={x["id"]:x for x in dcells}
+    # A topic can be a root or a child. Direct dcells remain supported at either level.
+    roots=[t for t in topics if t["parent_id"] is None]
+    children_by_parent={t["id"]:[c for c in topics if c["parent_id"]==t["id"]] for t in roots}
+    links_by_topic={t["id"]:[r for r in links if r["topic_id"]==t["id"] and r["dcell_id"] in by_id] for t in topics}
     nav=['<a href="index.html">专题库首页</a>']
-    for topic in topics:
-        topic_id=topic["id"]
-        nav.append(f'<div class="nav-group" data-topic-id="{topic_id}">')
+    def append_dcells(topic_id,css_class):
+        for relation in links_by_topic[topic_id]:
+            d=by_id[relation["dcell_id"]]
+            alias=relation["alias"] or d["name"]
+            nav.append(f'<a class="{css_class}" href="dcell-{d["id"]}.html">{html.escape(alias)}</a>')
+    for root in roots:
+        root_id=root["id"]
+        nav.append(f'<div class="nav-group" data-topic-id="{root_id}">')
         nav.append('<div class="nav-group-heading">'
-                   f'<a class="group" href="topic-{topic_id}.html">{html.escape(topic["name"])}</a>'
+                   f'<a class="group" href="topic-{root_id}.html">{html.escape(root["name"])}</a>'
                    f'<button type="button" class="nav-toggle" aria-expanded="true" '
-                   f'aria-controls="nav-children-{topic_id}" aria-label="折叠专题子目录"></button>'
+                   f'aria-controls="nav-children-{root_id}" aria-label="折叠专题子目录"></button>'
                    '</div>')
-        nav.append(f'<div class="nav-children" id="nav-children-{topic_id}">')
-        for relation in links:
-            if relation["topic_id"]==topic_id and relation["dcell_id"] in by_id:
-                d=by_id[relation["dcell_id"]]
-                alias=relation["alias"] or d["name"]
-                nav.append(f'<a class="sub" href="dcell-{d["id"]}.html">{html.escape(alias)}</a>')
+        nav.append(f'<div class="nav-children" id="nav-children-{root_id}">')
+        append_dcells(root_id,"sub")
+        for child in children_by_parent[root_id]:
+            child_id=child["id"]
+            nav.append(f'<div class="nav-group nav-subtopic" data-topic-id="{child_id}">')
+            nav.append('<div class="nav-group-heading">'
+                       f'<a class="group" href="topic-{child_id}.html">{html.escape(child["name"])}</a>'
+                       f'<button type="button" class="nav-toggle" aria-expanded="true" '
+                       f'aria-controls="nav-children-{child_id}" aria-label="折叠子专题数据集"></button>'
+                       '</div>')
+            nav.append(f'<div class="nav-children" id="nav-children-{child_id}">')
+            append_dcells(child_id,"sub nav-level-3")
+            nav.append('</div></div>')
         nav.append('</div></div>')
     nav_html="".join(nav)
     staging=ROOT / ".published-staging"
@@ -1067,7 +1109,7 @@ def publish():
     # Export only re-encoded managed assets, never upload originals or DB files.
     shutil.copytree(MEDIA, staging / "media")
     try:
-        cards="".join(f'<a class="card" href="topic-{t["id"]}.html"><h2>{html.escape(t["name"])}</h2><p>{html.escape(t["description"])}</p></a>' for t in topics)
+        cards="".join(f'<a class="card" href="topic-{t["id"]}.html"><h2>{html.escape(t["name"])}</h2><p>{html.escape(t["description"])}</p></a>' for t in roots)
         homepage=landing_state("home")["page"]
         if homepage.get("mode")=="package":
             home_content='<iframe title="首页设计" src="custom/home/index.html" sandbox="allow-scripts" referrerpolicy="no-referrer" style="display:block;width:100%;height:800px;border:0"></iframe>'
@@ -1075,12 +1117,14 @@ def publish():
             home_content=published_fragment(homepage) or f'<div class="cards">{cards}</div>'
         (staging/"index.html").write_text(render_document("专题库首页","农业专题数据资源展示",home_content,nav_html,theme,safe_css(homepage.get("css",""))),encoding="utf-8")
         for t in topics:
-            owned=[r for r in links if r["topic_id"]==t["id"] and r["dcell_id"] in by_id]
+            owned=links_by_topic[t["id"]]
             cards="".join(f'<a class="card" href="dcell-{r["dcell_id"]}.html">{html.escape(r["alias"] or by_id[r["dcell_id"]]["name"])}</a>' for r in owned)
+            children=children_by_parent.get(t["id"],[])
+            child_cards="".join(f'<a class="card" href="topic-{c["id"]}.html"><h2>{html.escape(c["name"])}</h2><p>{html.escape(c["description"])}</p></a>' for c in children)
             if t["page"].get("mode")=="package":
                 content='<iframe title="'+html.escape(t["name"],quote=True)+'" src="custom/topic-'+str(t["id"])+'/index.html" sandbox="allow-scripts" referrerpolicy="no-referrer" style="display:block;width:100%;height:800px;border:0"></iframe>'
             else:
-                content=published_fragment(t["page"])+f'<div class="cards">{cards}</div>'
+                content=published_fragment(t["page"])+f'<div class="cards">{child_cards}{cards}</div>'
             (staging/f'topic-{t["id"]}.html').write_text(render_document(t["name"],t["description"],content,nav_html,theme,safe_css(t["page"].get("css",""))),encoding="utf-8")
         for d in dcells:
             if d.get("mode")=="package":
