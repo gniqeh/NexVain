@@ -50,7 +50,7 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 <button id="nav-dcells" onclick="showTab('dcells')">dcell 管理</button>
 <button id="nav-appearance" onclick="showTab('appearance')">外观设置</button>
 </aside><main>
-<div id="publish-hint" class="notice">专题中的二级导航只显示已关联的 dcell。新增、导入、关联之后，请点击「发布静态站点」。</div><div class="notice">开发版：管理接口支持环境变量设置 HTTP Basic 密码；未设置时仅允许本机访问。请勿直接暴露公网。</div>
+<div id="publish-hint" class="notice">专题支持一级专题 → 子专题 → dcell 三级导航。一级专题也可直接关联 dcell；子专题拥有独立首页。修改后请重新发布。</div><div class="notice">开发版：管理接口支持环境变量设置 HTTP Basic 密码；未设置时仅允许本机访问。请勿直接暴露公网。</div>
 <section id="topics-section"><div class="card"><div class="row"><h2>专题库总首页</h2><button onclick="editHomeDesign()">可视化设计</button><button class="secondary" onclick="landingWorkspace('home')">高级源码 / ZIP</button><button class="secondary" onclick="window.open('/','_blank')">预览已发布首页</button></div><p class="muted">独立设计总首页，保留侧边导航，支持 HTML/CSS/JS 工程。</p></div><div class="toolbar"><h2>专题管理</h2><button onclick="openRecord('topic')">+ 新建专题</button></div><div id="topics-list"></div></section>
 <section id="dcells-section" class="hidden"><div class="toolbar"><h2>dcell 管理</h2><button onclick="openRecord('dcell')">+ 新建 dcell</button></div><div id="dcells-list"></div></section>
 <section id="appearance-section" class="hidden"><h2>全局外观</h2><div class="card"><label>展示站点风格</label><select id="theme"><option value="blue">科技深蓝</option><option value="dark">深色简约</option><option value="light">浅色科研</option></select><p class="muted">全局主题用于所有专题首页和 dcell 页面，发布后生效。</p><button onclick="saveTheme()">保存主题</button></div>
@@ -61,7 +61,7 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 <form id="record-form" onsubmit="saveRecord(event)">
 <label>名称</label><input id="item-name" required maxlength="120">
 <label>简介</label><textarea id="item-desc"></textarea>
-<div id="topic-position"><label>专题排序</label><input id="item-position" type="number" value="0"></div>
+<div id="topic-position"><label>上级专题</label><select id="item-parent"><option value="">无（一级专题）</option></select><p class="muted">选择一级专题作为上级，即创建二级子专题。子专题有独立首页，可关联自己的 dcell。</p><label>同级排序</label><input id="item-position" type="number" value="0"></div>
 <div id="dcell-mode" class="hidden"><label>页面来源</label><select id="item-mode" onchange="updateModeUI()"><option value="template">公共模板（推荐，开箱即用）</option><option value="editor">自由设计（GrapesJS）</option><option value="package">外部静态页面包 ZIP</option></select></div><div id="dcell-template" class="hidden"><label>页面模板</label><select id="item-template"><option value="overview">数据集概览</option><option value="metrics">指标看板</option><option value="gallery">图像图集</option><option value="research">科研成果</option><option value="standard">基础介绍</option><option value="metrics">指标展示</option><option value="gallery">图文展示</option><option value="custom">完全自定义</option></select></div>
 <div id="template-content" class="hidden"><div class="notice" style="margin-top:16px">填内容即可生成整页，无需设计 HTML。多条内容每行一条，用 | 分隔。</div><label>页面摘要</label><textarea id="tpl-summary" placeholder="数据来源、覆盖范围、应用价值"></textarea><label>指标卡（每行：指标名称 | 数值 | 备注）</label><textarea id="tpl-metrics" placeholder="图像数量 | 12480 | 张&#10;覆盖年份 | 2025 | 年"></textarea><label>统计图（每行：类别 | 数值）</label><textarea id="tpl-chart" placeholder="玉米 | 42&#10;水稻 | 63"></textarea><label>研究说明（每行：小节标题 | 内容）</label><textarea id="tpl-sections" placeholder="数据说明 | 介绍采集方法和应用价值"></textarea><label>图片（每行：已上传的 /media/图片地址 | 图注）</label><textarea id="tpl-images" placeholder="/media/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.png | 代表性图片"></textarea><div class="row" style="margin-top:12px"><input id="tpl-image-upload" type="file" accept="image/png,image/jpeg,image/webp" style="max-width:300px"><button type="button" class="secondary" onclick="uploadTemplateImage()">上传图片并加入列表</button></div><div class="card" style="margin-top:12px"><div class="row"><strong>素材库</strong><button type="button" class="secondary" onclick="loadAssets()">查看已上传图片</button></div><div id="asset-gallery"></div></div><p class="muted">内置模板自动布局；修改公共模板后，所有使用它的 dcell 会在下次发布时统一更新。</p></div><div class="row" style="margin-top:20px"><button type="submit">保存基本信息</button><button id="template-preview-btn" type="button" class="secondary hidden" onclick="previewTemplate()">预览模板页面</button><button type="button" class="secondary" id="design-btn" onclick="openEditor()">设计页面</button></div></form>
 <div id="package-area" class="hidden"><hr style="border-color:#304d65;margin:20px 0"><h3>挂载独立页面</h3><p class="muted">ZIP 根目录必须有 index.html，可包含 CSS、JS、图像和本地数据文件。请只上传自己可信任且完成脱敏的页面包。</p><input id="package-zip" type="file" accept=".zip"><div class="row" style="margin-top:12px"><button type="button" onclick="uploadPackage()">上传并挂载到 dcell</button><button type="button" class="secondary" onclick="previewPackage()">预览当前页面包</button></div><label>或者从服务器授权目录导入</label><input id="package-directory" placeholder="相对 NEXVAIN_IMPORT_ROOT 的目录，例如 corn-disease"><button style="margin-top:10px" type="button" class="secondary" onclick="importDirectory()">导入服务器目录</button></div><div id="relations-wrap" class="hidden"><hr style="border-color:#304d65;margin:20px 0"><h3 id="relations-title">关联 dcell</h3><div id="relations-content"></div></div>
@@ -114,7 +114,9 @@ function message(s){
 }
 async function refresh(){
  [topics,dcells]=await Promise.all([api('/topics'),api('/dcells')]);
- document.getElementById('topics-list').innerHTML=topics.map(t=>'<div class="card topic-item" draggable="true" data-topic-id="'+t.id+'"><div class="row"><span title="拖拽排序">⠿</span><h3>'+esc(t.name)+'</h3><button onclick="openRecord(\'topic\','+t.id+')">编辑首页 / 关联</button><button class="secondary" onclick="editDesign(\'topic\','+t.id+')">可视化设计</button><button class="secondary" onclick="landingWorkspace(\'topic-'+t.id+'\')">高级源码 / ZIP</button><button class="danger" onclick="removeRecord(\'topic\','+t.id+')">删除</button></div><p class="muted">'+esc(t.description)+'</p></div>').join('')||'<p class="muted">还没有专题。</p>';
+ const topicCard=(t,child=false)=>'<div class="card topic-item" draggable="'+(!child)+'" data-topic-id="'+t.id+'" style="'+(child?'margin-left:35px;border-left:3px solid var(--blue);':'')+'"><div class="row"><span title="拖拽排序">'+(child?'↳':'⠿')+'</span><h3>'+(child?'子专题：':'')+esc(t.name)+'</h3><button onclick="openRecord(\'topic\','+t.id+')">编辑首页 / 关联</button><button class="secondary" onclick="editDesign(\'topic\','+t.id+')">可视化设计</button><button class="secondary" onclick="landingWorkspace(\'topic-'+t.id+'\')">高级源码 / ZIP</button><button class="danger" onclick="removeRecord(\'topic\','+t.id+')">删除</button></div><p class="muted">'+esc(t.description)+'</p></div>';
+ const roots=topics.filter(t=>t.parent_id==null);
+ document.getElementById('topics-list').innerHTML=roots.map(t=>topicCard(t)+topics.filter(c=>c.parent_id===t.id).map(c=>topicCard(c,true)).join('')).join('')||'<p class="muted">还没有专题。</p>';
  bindTopicDrag();
  document.getElementById('dcells-list').innerHTML=dcells.map(d=>'<div class="card"><div class="row"><h3>'+esc(d.name)+'</h3><button onclick="openRecord(\'dcell\','+d.id+')">编辑内容 / 查看关联</button>'+(d.mode==='editor'?'<button class="secondary" onclick="editDesign(\'dcell\','+d.id+')">设计页面</button>':d.mode==='template'?'<button class="secondary" onclick="window.open(\'/api/dcells/'+d.id+'/preview\',\'_blank\')">预览模板</button>':'')+'<button class="secondary" onclick="sourceWorkspace('+d.id+')">源码</button><button class="secondary" onclick="cloneDcell('+d.id+')">复制</button><button class="danger" onclick="removeRecord(\'dcell\','+d.id+')">删除</button></div><p class="muted">'+esc(d.description)+'</p></div>').join('')||'<p class="muted">还没有 dcell。</p>';
 }
@@ -128,6 +130,14 @@ async function openRecord(k,id=null){
  document.getElementById('item-name').value=current?.name||'';
  document.getElementById('item-desc').value=current?.description||'';
  document.getElementById('item-position').value=current?.position||0;
+ if(k==='topic'){
+  const hasChildren=current&&topics.some(t=>t.parent_id===current.id);
+  const parentSelect=document.getElementById('item-parent');
+  parentSelect.innerHTML='<option value="">无（一级专题）</option>'+topics.filter(t=>t.parent_id==null&&t.id!==current?.id).map(t=>'<option value="'+t.id+'">'+esc(t.name)+'</option>').join('');
+  parentSelect.value=String(current?.parent_id??'');
+  parentSelect.disabled=!!hasChildren;
+  parentSelect.title=hasChildren?'该专题已有子专题，必须先移走子专题才能调整其上级':'';
+ }
  document.getElementById('item-template').value=current?.template||(k==='dcell'?'overview':'standard');
  document.getElementById('item-mode').value=current?.mode||(k==='dcell'?'template':'editor');
  fillTemplateFields(current?.content&&Object.keys(current.content).length?current.content:defaultTemplateContent);
@@ -145,7 +155,10 @@ async function saveRecord(event){
  const payload={name:document.getElementById('item-name').value.trim(),
  description:document.getElementById('item-desc').value,
  page:current?.page||{}};
- if(isTopic)payload.position=Number(document.getElementById('item-position').value);
+ if(isTopic){
+  payload.position=Number(document.getElementById('item-position').value);
+  payload.parent_id=document.getElementById('item-parent').value?Number(document.getElementById('item-parent').value):null;
+ }
  else {payload.template=document.getElementById('item-template').value;payload.mode=document.getElementById('item-mode').value;payload.content=readTemplateFields();}
  const path=isTopic?'/topics':'/dcells';
  try{
@@ -160,7 +173,7 @@ async function removeRecord(k,id){
 }
 async function loadTopicRelations(){
  const rows=await api('/topics/'+current.id+'/dcells');const chosen=new Map(rows.map(r=>[r.id,r]));
- document.getElementById('relations-title').textContent='此专题关联哪些 dcell（拖动调整顺序）';
+ document.getElementById('relations-title').textContent='此专题直接关联哪些 dcell（子专题需分别设置关联）';
  const ordered=[...dcells].sort((a,b)=>{const x=chosen.get(a.id),y=chosen.get(b.id);return x&&y?x.position-y.position:x?-1:y?1:a.id-b.id});
  document.getElementById('relations-content').innerHTML='<div class="links">'+ordered.map(d=>{
  const r=chosen.get(d.id);
@@ -192,13 +205,13 @@ function bindReorder(container, selector){
 }
 function bindRelationDrag(){const el=document.querySelector('#relations-content .links');if(el)bindReorder(el,'.rel-row');}
 function bindTopicDrag(){
- const el=document.getElementById('topics-list');bindReorder(el,'.topic-item');
+ const el=document.getElementById('topics-list');bindReorder(el,'.topic-item[draggable="true"]');
  el.ondrop=async e=>{
   e.preventDefault();
-  const order=[...el.querySelectorAll('.topic-item')].map(x=>Number(x.dataset.topicId));
+  const order=[...el.querySelectorAll('.topic-item[draggable="true"]')].map(x=>Number(x.dataset.topicId));
   try{for(let i=0;i<order.length;i++){
    const t=topics.find(x=>x.id===order[i]);if(!t||t.position===i)continue;
-   await api('/topics/'+t.id,{method:'PUT',body:JSON.stringify({name:t.name,description:t.description,page:t.page,position:i})});
+   await api('/topics/'+t.id,{method:'PUT',body:JSON.stringify({name:t.name,description:t.description,page:t.page,position:i,parent_id:t.parent_id})});
   }await refresh();message('专题排序已保存，发布后生效');}catch(err){alert(err.message)}
  };
 }
