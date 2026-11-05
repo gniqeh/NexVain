@@ -401,3 +401,45 @@ def test_topic_landing_advanced_zip_import_and_navigation():
     assert client.post("/api/publish").status_code==200
     assert "color:cyan" in client.get("/custom/"+key+"/style.css").text
     assert client.put("/api/pages/"+key+"/source/file",params={"path":"../outside.js"},json={"content":"no"}).status_code==400
+
+
+def test_subtopic_homepage_and_third_level_navigation():
+    parent=client.post("/api/topics",json={"name":"产权产品专题","description":"一级总览"}).json()
+    child=client.post("/api/topics",json={
+        "name":"产权专题","description":"子专题独立简介","parent_id":parent["id"],
+        "page":{"html":"<section><h2>产权专题独立首页</h2></section>"}
+    }).json()
+    d=client.post("/api/dcells",json={"name":"软件著作权展示"}).json()
+    assert child["parent_id"]==parent["id"]
+    assert client.put(f"/api/topics/{child['id']}/dcells",
+                      json=[{"dcell_id":d["id"]}]).status_code==200
+    assert client.post("/api/publish").status_code==200
+    home=client.get("/index.html").text
+    assert f'href="topic-{parent["id"]}.html"' in home
+    assert f'href="topic-{child["id"]}.html"' in home
+    assert "nav-level-3" in home
+    assert "软件著作权展示" in home
+    child_page=client.get(f"/topic-{child['id']}.html").text
+    assert "产权专题独立首页" in child_page
+    parent_page=client.get(f"/topic-{parent['id']}.html").text
+    assert f'href="topic-{child["id"]}.html"' in parent_page
+    assert "产权专题" in parent_page
+    assert "专题库首页" in home
+    assert client.get(f"/api/pages/topic-{child['id']}").json()["page"]["html"]
+
+
+def test_subtopic_parent_validation_and_deletion_guard():
+    parent=client.post("/api/topics",json={"name":"不可误删的父专题"}).json()
+    child=client.post("/api/topics",json={"name":"受保护子专题","parent_id":parent["id"]}).json()
+    bad=client.post("/api/topics",json={"name":"非法三级专题","parent_id":child["id"]})
+    assert bad.status_code==400
+    bad=client.put(f"/api/topics/{parent['id']}",json={
+        "name":parent["name"],"parent_id":child["id"]})
+    assert bad.status_code==400
+    bad=client.put(f"/api/topics/{parent['id']}",json={
+        "name":parent["name"],"parent_id":parent["id"]})
+    assert bad.status_code==400
+    assert client.delete(f"/api/topics/{parent['id']}").status_code==409
+    assert client.put(f"/api/topics/{child['id']}",json={
+        "name":child["name"],"parent_id":None}).status_code==200
+    assert client.delete(f"/api/topics/{parent['id']}").status_code==200
