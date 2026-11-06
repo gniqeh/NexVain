@@ -899,6 +899,8 @@ BASE_CSS = """
 html,body{width:100%;height:100%;margin:0;overflow:hidden}
 body{font-family:Inter,'Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text)}
 .shell{position:absolute;left:0;top:0;display:flex;width:1920px;height:1080px;transform-origin:0 0;overflow:hidden}
+.nva-parent-back{position:absolute;right:285px;top:34px;z-index:1100;display:block;padding:12px 17px;border:1px solid rgba(255,255,255,.22);border-radius:9px;background:#183a53;color:#eaf7ff!important;font:700 15px 'Microsoft YaHei',sans-serif;text-decoration:none;box-shadow:0 5px 18px #0004;white-space:nowrap}
+.nva-parent-back:hover,.nva-parent-back:focus-visible{background:#276385;outline:2px solid var(--accent);outline-offset:2px}
 .nav{width:300px;height:1080px;flex:0 0 300px;overflow:hidden;background:var(--panel);padding:24px 8px 24px 15px;display:flex;flex-direction:column}
 .nav h2{font-size:22px;margin:0 0 28px;flex:none;padding-right:7px}
 .nav-list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--accent) transparent;padding-right:7px}
@@ -951,7 +953,7 @@ def render_document(title, intro, content, nav, theme, custom_css=""):
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>{html.escape(title)} · NexVain</title><style>{style}</style></head>
-    <body><div class="shell"><aside class="nav"><h2>NexVain</h2><div class="nav-list">{nav}</div></aside>
+    <body><div class="shell"><a href="http://192.168.8.169/bigData/#/" class="nva-parent-back" title="返回农业大数据管理系统">← 返回农业大数据管理系统</a><aside class="nav"><h2>NexVain</h2><div class="nav-list">{nav}</div></aside>
     <main class="stage"><div class="stage-inner"><h1>{html.escape(title)}</h1>
     <p class="intro">{html.escape(intro)}</p><section class="content">{content}</section>
     </div></main></div>
