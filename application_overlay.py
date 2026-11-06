@@ -129,7 +129,7 @@ def decorate_dcell_page(page: str, dcell_id: int, dcell_name: str) -> str:
         raise ValueError("NexVain Dcell shell structure changed; application overlay not injected")
     button = '<button type="button" id="nva-apply-open" class="nva-apply-open" aria-haspopup="dialog">申请数据</button>'
     modal = MODAL.replace('__ID__', str(int(dcell_id))).replace('__NAME__', html.escape(dcell_name, quote=True))
-    page = page.replace('</style>', STYLE + '</style>', 1)
+    page = page.replace('</style>', '</style>' + STYLE, 1)
     page = page.replace(marker, marker + button, 1)
     page = page.replace(shell_end, '</main>' + modal + '</div>\n    <script>', 1)
     return page.replace('</body>', SCRIPT + '</body>', 1)
