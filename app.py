@@ -1115,7 +1115,7 @@ def publish():
         cards="".join(f'<a class="card" href="topic-{t["id"]}.html"><h2>{html.escape(t["name"])}</h2><p>{html.escape(t["description"])}</p></a>' for t in roots)
         homepage=landing_state("home")["page"]
         if homepage.get("mode")=="package":
-            home_content='<iframe title="首页设计" src="custom/home/index.html" sandbox="allow-scripts" referrerpolicy="no-referrer" style="display:block;width:100%;height:800px;border:0"></iframe>'
+            home_content='<iframe title="首页设计" src="custom/home/index.html" sandbox="allow-scripts allow-top-navigation-by-user-activation" referrerpolicy="no-referrer" style="display:block;width:100%;height:800px;border:0"></iframe>'
         else:
             home_content=published_fragment(homepage) or f'<div class="cards">{cards}</div>'
         (staging/"index.html").write_text(render_document("专题库首页","农业专题数据资源展示",home_content,nav_html,theme,safe_css(homepage.get("css",""))),encoding="utf-8")
@@ -1125,7 +1125,7 @@ def publish():
             children=children_by_parent.get(t["id"],[])
             child_cards="".join(f'<a class="card" href="topic-{c["id"]}.html"><h2>{html.escape(c["name"])}</h2><p>{html.escape(c["description"])}</p></a>' for c in children)
             if t["page"].get("mode")=="package":
-                content='<iframe title="'+html.escape(t["name"],quote=True)+'" src="custom/topic-'+str(t["id"])+'/index.html" sandbox="allow-scripts" referrerpolicy="no-referrer" style="display:block;width:100%;height:800px;border:0"></iframe>'
+                content='<iframe title="'+html.escape(t["name"],quote=True)+'" src="custom/topic-'+str(t["id"])+'/index.html" sandbox="allow-scripts allow-top-navigation-by-user-activation" referrerpolicy="no-referrer" style="display:block;width:100%;height:800px;border:0"></iframe>'
             else:
                 content=published_fragment(t["page"])+f'<div class="cards">{child_cards}{cards}</div>'
             (staging/f'topic-{t["id"]}.html').write_text(render_document(t["name"],t["description"],content,nav_html,theme,safe_css(t["page"].get("css",""))),encoding="utf-8")
