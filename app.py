@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.responses import FileResponse, Response, HTMLResponse, StreamingResponse
 import history_store
 import publish_checks
+from application_overlay import decorate_dcell_page
 from template_engine import TEMPLATES, DEFAULT_CONTENT, CSS as TEMPLATE_CSS, render_template
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -1135,7 +1136,9 @@ def publish():
             else:
                 content=published_fragment(d["page"]) or '<div class="panel"><p>'+html.escape(d["description"])+'</p></div>'
             style=TEMPLATE_CSS if d.get("mode")=="template" else safe_css(d["page"].get("css",""))
-            (staging/f'dcell-{d["id"]}.html').write_text(render_document(d["name"],d["description"],content,nav_html,theme,style),encoding="utf-8")
+            page_html=render_document(d["name"],d["description"],content,nav_html,theme,style)
+            page_html=decorate_dcell_page(page_html,d["id"],d["name"])
+            (staging/f'dcell-{d["id"]}.html').write_text(page_html,encoding="utf-8")
         report=publish_checks.check(staging)
         if not report["ok"]:
             raise HTTPException(409,detail={"message":"Publish resource validation failed","report":report})
