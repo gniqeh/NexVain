@@ -44,7 +44,7 @@ a{color:#70caf8}#status{font-size:13px;color:#84d7ba} .hidden{display:none!impor
 <button class="secondary" onclick="dismissDecoy()">返回</button></div>
 <style>@keyframes decoy-spin{to{transform:rotate(360deg)}}</style>
 <header><strong>NexVain <span class="muted">专题数据展示管理</span></strong>
-<div class="row"><span id="publish-state" class="muted">检查发布状态…</span><span id="status"></span><button class="secondary" onclick="window.open('/','_blank')">查看大屏</button><button onclick="publish()">发布静态站点</button></div></header>
+<div class="row"><a href="http://192.168.8.169/bigData/#/" style="display:inline-block;padding:10px 14px;border:1px solid #377395;border-radius:7px;background:#1c577b;color:#fff;text-decoration:none;font-size:14px;white-space:nowrap">← 返回农业大数据管理系统</a><span id="publish-state" class="muted">检查发布状态…</span><span id="status"></span><button class="secondary" onclick="window.open('/','_blank')">查看大屏</button><button onclick="publish()">发布静态站点</button></div></header>
 <div class="layout"><aside>
 <button id="nav-topics" class="selected" onclick="showTab('topics')">专题管理</button>
 <button id="nav-dcells" onclick="showTab('dcells')">dcell 管理</button>
