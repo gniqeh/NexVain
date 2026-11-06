@@ -370,6 +370,7 @@ def test_total_homepage_advanced_design_and_publish():
     assert client.post("/api/publish").status_code==200
     result=client.get("/index.html").text
     assert "custom/home/index.html" in result
+    assert 'sandbox="allow-scripts allow-top-navigation-by-user-activation"' in result
     assert 'class="nav"' in result
     assert "完整开发首页" in client.get("/custom/home/index.html").text
     export=client.get("/api/pages/home/export")
@@ -395,6 +396,7 @@ def test_topic_landing_advanced_zip_import_and_navigation():
     assert client.post("/api/publish").status_code==200
     outer=client.get("/topic-"+str(topic["id"])+".html").text
     assert "custom/"+key+"/index.html" in outer
+    assert 'sandbox="allow-scripts allow-top-navigation-by-user-activation"' in outer
     assert 'class="nav"' in outer
     assert "高级专题页面" in client.get("/custom/"+key+"/index.html").text
     assert client.put("/api/pages/"+key+"/source/file",params={"path":"style.css"},json={"content":"h1{color:cyan}"}).status_code==200
@@ -443,3 +445,18 @@ def test_subtopic_parent_validation_and_deletion_guard():
     assert client.put(f"/api/topics/{child['id']}",json={
         "name":child["name"],"parent_id":None}).status_code==200
     assert client.delete(f"/api/topics/{parent['id']}").status_code==200
+
+
+def test_dcell_package_keeps_restricted_navigation_sandbox():
+    """Dcell packages must not inherit top-level navigation permission."""
+    import io,zipfile
+    d=client.post("/api/dcells",json={"name":"独立页面沙箱验证","mode":"package"}).json()
+    archive=io.BytesIO()
+    with zipfile.ZipFile(archive,"w") as z:
+        z.writestr("index.html","<h1>沙箱验证</h1>")
+    response=client.post(f"/api/dcells/{d['id']}/package",files={"file":("test.zip",archive.getvalue(),"application/zip")})
+    assert response.status_code==200,response.text
+    assert client.post("/api/publish").status_code==200
+    outer=client.get(f"/dcell-{d['id']}.html").text
+    assert 'sandbox="allow-scripts"' in outer
+    assert 'allow-top-navigation-by-user-activation' not in outer
