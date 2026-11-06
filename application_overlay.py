@@ -43,8 +43,7 @@ MODAL = """
 <div id="nva-apply-backdrop" class="nva-apply-backdrop" hidden>
   <section class="nva-apply-modal" role="dialog" aria-modal="true" aria-labelledby="nva-apply-title">
     <div class="nva-apply-head"><h2 id="nva-apply-title">数据使用申请</h2><button type="button" class="nva-apply-close" id="nva-apply-close" aria-label="关闭申请窗口">&times;</button></div>
-    <p class="nva-apply-subtitle">NexVain · 数据资源申请演示</p>
-    <div class="nva-apply-resource"><small>当前申请的数据集 · ID __ID__</small><strong>__NAME__</strong></div>
+    <div class="nva-apply-resource"><strong>__NAME__</strong></div>
     <form id="nva-apply-form">
       <div class="nva-apply-row">
         <label class="nva-apply-field">申请人 *<input name="applicant" required maxlength="80" autocomplete="name" placeholder="请输入姓名"></label>
@@ -53,12 +52,11 @@ MODAL = """
       <label class="nva-apply-field">联络邮箱 *<input type="email" name="email" required maxlength="180" placeholder="example@institution.cn"></label>
       <label class="nva-apply-field">申请说明 *<textarea name="purpose" required maxlength="1500" placeholder="请说明拟申请数据的用途"></textarea></label>
       <label class="nva-apply-field">备注（选填）<textarea name="remarks" maxlength="1500" placeholder="其他需要说明的信息"></textarea></label>
-      <p class="nva-apply-note">演示说明：当前仅模拟申请流程，填写的信息不会被发送或保存，也不构成数据授权。</p>
       <div class="nva-apply-actions"><button type="button" id="nva-apply-cancel">取消</button><button type="submit">提交申请</button></div>
     </form>
     <div id="nva-apply-success" class="nva-apply-success" hidden>
-      <h3>模拟提交完成</h3>
-      <p>您已完成申请流程演示。当前页面不会实际提交、保存或发送申请信息。</p>
+      <h3>申请信息已填写</h3>
+      <p>请联系数据管理员继续办理申请。此表单不会自动发送或保存填写内容。</p>
       <button type="button" class="nva-apply-done" id="nva-apply-done">完成</button>
     </div>
   </section>
